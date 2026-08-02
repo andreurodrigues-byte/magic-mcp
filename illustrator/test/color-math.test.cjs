@@ -268,6 +268,146 @@ ok("RGB preto nao divide por zero",
     blackCmyk[3] === 100 && !isNaN(blackCmyk[0]), blackCmyk.join(","));
 
 // ---------------------------------------------------------------------------
+console.log("\npickTextColor - contraste WCAG sobre a cor");
+// ---------------------------------------------------------------------------
+ok("preto -> texto branco", sandbox.pickTextColor([0, 0, 0]) === "white");
+ok("branco -> texto preto", sandbox.pickTextColor([255, 255, 255]) === "black");
+// Amarelo e azul tem brilho aparente parecido mas luminancia bem diferente:
+// e o caso que um teste de "escuro?" ingenuo erra.
+ok("amarelo forte -> texto preto", sandbox.pickTextColor([255, 220, 0]) === "black",
+    sandbox.pickTextColor([255, 220, 0]));
+ok("azul 286 C -> texto branco", sandbox.pickTextColor([0, 51, 160]) === "white",
+    sandbox.pickTextColor([0, 51, 160]));
+ok("vermelho 185 C -> texto branco", sandbox.pickTextColor([228, 0, 43]) === "white",
+    sandbox.pickTextColor([228, 0, 43]));
+ok("bege claro -> texto preto", sandbox.pickTextColor([214, 199, 166]) === "black",
+    sandbox.pickTextColor([214, 199, 166]));
+
+// A escolha tem de ser sempre a de maior contraste, por definicao.
+var wrongPicks = 0;
+for (var lum = 0; lum < 256; lum += 5) {
+    for (var ch = 0; ch < 3; ch++) {
+        var probeRgb = [40, 40, 40];
+        probeRgb[ch] = lum;
+        var L = sandbox.relativeLuminance(probeRgb);
+        var better = ((L + 0.05) / 0.05) >= (1.05 / (L + 0.05)) ? "black" : "white";
+        if (sandbox.pickTextColor(probeRgb) !== better) wrongPicks++;
+    }
+}
+ok("sempre escolhe a cor de maior contraste", wrongPicks === 0, wrongPicks + " erros");
+
+ok("luminancia do branco e 1", Math.abs(sandbox.relativeLuminance([255, 255, 255]) - 1) < 1e-9);
+ok("luminancia do preto e 0", sandbox.relativeLuminance([0, 0, 0]) < 1e-12);
+
+// ---------------------------------------------------------------------------
+console.log("\nbentoRowSpans - mosaico sem buraco nem estouro");
+// ---------------------------------------------------------------------------
+var badSum = 0, badSpan = 0, allSame = true, firstRow = null;
+for (var colCount = 1; colCount <= 8; colCount++) {
+    for (var rIdx = 0; rIdx < 12; rIdx++) {
+        var spans = sandbox.bentoRowSpans(colCount, rIdx);
+        var total = 0;
+        for (var sp = 0; sp < spans.length; sp++) {
+            total += spans[sp];
+            if (spans[sp] < 1 || spans[sp] > 2) badSpan++;
+        }
+        if (total !== colCount) badSum++;
+        if (colCount === 4) {
+            var asText = spans.join(",");
+            if (firstRow === null) firstRow = asText;
+            else if (asText !== firstRow) allSame = false;
+        }
+    }
+}
+ok("a soma bate com columns em toda combinacao", badSum === 0, badSum + " linhas erradas");
+ok("nenhum bloco menor que 1 ou maior que 2 colunas", badSpan === 0, badSpan + " blocos");
+ok("as linhas variam entre si (mosaico, nao listras)", allSame === false);
+ok("columns = 1 devolve um bloco", sandbox.bentoRowSpans(1, 0).length === 1);
+ok("columns = 0 nao gera laco infinito", sandbox.bentoRowSpans(0, 0).length === 1);
+
+var pattern = [];
+for (var pr = 0; pr < 6; pr++) pattern.push(sandbox.bentoRowSpans(4, pr).join(""));
+console.log("  columns=4, 6 linhas: " + pattern.join(" | "));
+
+var tallCount = 0;
+for (var tr = 0; tr < 12; tr++) if (sandbox.bentoRowIsTall(tr)) tallCount++;
+ok("linhas altas sao minoria mas existem", tallCount > 0 && tallCount < 12, tallCount + "/12");
+
+// ---------------------------------------------------------------------------
+console.log("\nfitTextSize - rotulo cabendo na largura do bloco");
+// ---------------------------------------------------------------------------
+ok("linha curta mantem o corpo base",
+    sandbox.fitTextSize("HEX #FFF", 200, 9, 6) === 9,
+    "" + sandbox.fitTextSize("HEX #FFF", 200, 9, 6));
+
+// O caso real que fazia o texto vazar por cima do bloco vizinho.
+var longLabel = "PANTONE Neutral Black C  dE 2.5";
+var narrow = sandbox.fitTextSize(longLabel, 110 - 24, 9, 6);
+ok("rotulo longo em bloco estreito encolhe", narrow < 9, "" + narrow);
+ok("nunca encolhe abaixo do minimo", narrow >= 6, "" + narrow);
+
+/*
+ * Contrato: o rotulo cabe, A NAO SER que o piso de legibilidade tenha sido
+ * atingido. Neste caso (31 caracteres em 86 pt) caberia so a ~5 pt, entao a
+ * funcao para em 6 e deixa transbordar de proposito — texto ilegivel numa
+ * legenda de cor e pior que texto que encosta na borda. Quando isso incomodar,
+ * a saida e menos colunas ou showDeltaE: false, nao um corpo menor.
+ */
+var fitsAt = function (label, size, width) {
+    return label.length * size * 0.55 <= width + 0.5;
+};
+ok("ou cabe, ou parou no piso",
+    fitsAt(longLabel, narrow, 110 - 24) || narrow === 6,
+    "corpo " + narrow + ", precisaria de " + (86 / (longLabel.length * 0.55)).toFixed(2));
+
+// Onde o piso NAO e atingido, tem de caber de verdade.
+var mid = sandbox.fitTextSize(longLabel, 140, 9, 6);
+ok("acima do piso, o encolhido realmente cabe",
+    mid > 6 && fitsAt(longLabel, mid, 140), "corpo " + mid);
+
+ok("bloco largo cabe o mesmo rotulo sem encolher",
+    sandbox.fitTextSize(longLabel, 238 - 24, 9, 6) === 9,
+    "" + sandbox.fitTextSize(longLabel, 238 - 24, 9, 6));
+
+ok("largura absurdamente pequena para no minimo",
+    sandbox.fitTextSize(longLabel, 5, 9, 6) === 6,
+    "" + sandbox.fitTextSize(longLabel, 5, 9, 6));
+ok("largura zero nao quebra", sandbox.fitTextSize(longLabel, 0, 9, 6) === 9);
+ok("rotulo vazio nao quebra", sandbox.fitTextSize("", 100, 9, 6) === 9);
+
+// A medida tem de ser a linha MAIS LONGA, nao a primeira nem a ultima.
+var multi = "ab\rPANTONE Neutral Black C  dE 2.5\rcd";
+ok("mede a linha mais longa do bloco",
+    sandbox.fitTextSize(multi, 86, 9, 6) === sandbox.fitTextSize(longLabel, 86, 9, 6),
+    sandbox.fitTextSize(multi, 86, 9, 6) + " vs " + sandbox.fitTextSize(longLabel, 86, 9, 6));
+ok("longestLineLength ignora os \\r", sandbox.longestLineLength(multi) === longLabel.length,
+    sandbox.longestLineLength(multi) + " vs " + longLabel.length);
+ok("longestLineLength de linha unica", sandbox.longestLineLength("abcd") === 4);
+ok("longestLineLength de string vazia", sandbox.longestLineLength("") === 0);
+
+// ---------------------------------------------------------------------------
+console.log("\nautoUnitWidth - coluna se adapta ao rotulo");
+// ---------------------------------------------------------------------------
+var shortLabels = ["HEX #FFF", "HEX #000"];
+ok("rotulos curtos nao encolhem a coluna abaixo do minimo",
+    sandbox.autoUnitWidth(shortLabels, 9, 12, 110, 260) === 110,
+    "" + sandbox.autoUnitWidth(shortLabels, 9, 12, 110, 260));
+
+var wide = sandbox.autoUnitWidth(["PANTONE Neutral Black C  dE 2.5"], 9, 12, 110, 260);
+ok("rotulo longo alarga a coluna", wide > 110, "" + wide);
+ok("na coluna alargada o texto cabe no corpo base",
+    sandbox.fitTextSize("PANTONE Neutral Black C  dE 2.5", wide - 24, 9, 6) === 9,
+    "corpo " + sandbox.fitTextSize("PANTONE Neutral Black C  dE 2.5", wide - 24, 9, 6));
+
+var huge = new Array(200).join("x");
+ok("rotulo absurdo para no maximo",
+    sandbox.autoUnitWidth([huge], 9, 12, 110, 260) === 260,
+    "" + sandbox.autoUnitWidth([huge], 9, 12, 110, 260));
+ok("lista vazia devolve o minimo", sandbox.autoUnitWidth([], 9, 12, 110, 260) === 110);
+ok("manda o rotulo mais longo da lista, nao o primeiro",
+    sandbox.autoUnitWidth(["ab", "PANTONE Neutral Black C  dE 2.5"], 9, 12, 110, 260) === wide);
+
+// ---------------------------------------------------------------------------
 console.log("\nbuildLabel - montagem do rotulo");
 // ---------------------------------------------------------------------------
 function makeRec() {
@@ -284,7 +424,7 @@ function makeRec() {
 }
 var cfg = {
     showName: true, showHex: true, showCMYK: true, showRGB: true,
-    showPantone: true, maxDeltaE: 10
+    showPantone: true, showDeltaE: true, maxDeltaE: 10
 };
 
 var lines = sandbox.buildLabel(makeRec(), cfg).split("\r");
@@ -293,31 +433,37 @@ ok("linha 1 e o nome", lines[0] === "Vermelho da marca", lines[0]);
 ok("linha 2 e o hex", lines[1] === "HEX #E4002B", lines[1]);
 ok("linha 3 e o cmyk arredondado", lines[2] === "CMYK 0 100 81 4", lines[2]);
 ok("linha 4 e o rgb", lines[3] === "RGB 228 0 43", lines[3]);
-ok("match bom leva um til e o dE", lines[4] === "~ PANTONE 185 C  dE 1.8", lines[4]);
-ok("segundo colocado tambem aparece", lines[5] === "~ PANTONE 199 C  dE 2.2", lines[5]);
+ok("pantone sai limpo, com o dE", lines[4] === "PANTONE 185 C  dE 1.8", lines[4]);
+ok("segundo colocado tambem aparece", lines[5] === "PANTONE 199 C  dE 2.2", lines[5]);
 
+// Nenhuma linha pode voltar a sair com til, em nenhuma condicao.
 var weak = makeRec();
 weak.pantone[0].deltaE = 18;
-ok("match fraco leva dois tis",
-    sandbox.buildLabel(weak, cfg).split("\r")[4] === "~~ PANTONE 185 C  dE 18",
-    sandbox.buildLabel(weak, cfg).split("\r")[4]);
+var weakLines = sandbox.buildLabel(weak, cfg).split("\r");
+ok("match fraco tambem sai sem til", weakLines[4] === "PANTONE 185 C  dE 18", weakLines[4]);
+var anyTilde = false;
+for (var wl = 0; wl < weakLines.length; wl++) {
+    if (weakLines[wl].indexOf("~") !== -1) anyTilde = true;
+}
+ok("nenhum til em lugar nenhum do rotulo", anyTilde === false, weakLines.join(" / "));
 
-// Regressao: a primeira linha de Pantone de uma spot color ja saiu sem til,
-// como se fosse leitura exata. Mas o "mais proximo" e busca, nao leitura, e
-// pode cair em outro codigo que nao o da propria spot. Toda linha leva til; o
-// nome exato da spot fica no titulo.
+var noDe = sandbox.buildLabel(makeRec(), {
+    showName: false, showHex: false, showCMYK: false, showRGB: false,
+    showPantone: true, showDeltaE: false, maxDeltaE: 10
+});
+ok("showDeltaE desligado deixa so o codigo",
+    noDe === "PANTONE 185 C\rPANTONE 199 C", JSON.stringify(noDe));
+
+// O nome exato de uma spot fica no titulo; a linha de Pantone abaixo continua
+// sendo o resultado da busca, que pode cair em outro codigo.
 var spotRec = makeRec();
 spotRec.name = "PANTONE 185 C";
 var spotLines = sandbox.buildLabel(spotRec, cfg).split("\r");
 ok("spot color: nome exato fica no titulo", spotLines[0] === "PANTONE 185 C", spotLines[0]);
-ok("spot color: linha de pantone continua marcada como aproximacao",
-    spotLines[4] === "~ PANTONE 185 C  dE 1.8", spotLines[4]);
-ok("spot color: 2o colocado tambem marcado",
-    spotLines[5] === "~ PANTONE 199 C  dE 2.2", spotLines[5]);
 
 var minimal = sandbox.buildLabel(makeRec(), {
     showName: false, showHex: true, showCMYK: false, showRGB: false,
-    showPantone: false, maxDeltaE: 10
+    showPantone: false, showDeltaE: true, maxDeltaE: 10
 });
 ok("flags desligadas removem linhas", minimal === "HEX #E4002B", minimal);
 

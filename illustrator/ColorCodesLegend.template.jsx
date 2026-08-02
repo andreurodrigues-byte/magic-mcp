@@ -36,17 +36,38 @@ var CONFIG = {
     // defensavel quanto o primeiro. Ver illustrator/README.md.
     pantoneCount: 2,
 
-    // Acima deste Delta E 2000 o match e considerado fraco e recebe "~~".
-    // 1 = imperceptivel, 2-3 = perceptivel de perto, >10 = cor claramente outra.
-    maxDeltaE: 10,
+    // Mostra a distancia perceptual junto do codigo: "PANTONE 286 C  dE 1.3".
+    // E o que resta avisando que o Pantone e aproximacao, e nao leitura.
+    // Desligue so se a legenda for para consumo interno.
+    showDeltaE: true,
 
-    columns: 5,
-    swatchW: 110,
-    swatchH: 110,
+    // "grid"  = grade uniforme, rotulo abaixo da amostra
+    // "bento" = mosaico de blocos de larguras e alturas variadas, rotulo dentro
+    //           da propria cor, com preto ou branco escolhido por contraste
+    layout: "bento",
+
+    columns: 4,
+    swatchW: 110, // no bento, largura de 1 coluna; blocos largos ocupam 2
+    swatchH: 110, // no bento, altura de uma linha normal
+
+    // Alarga a coluna ate o rotulo mais longo caber no corpo base, em vez de
+    // encolher a fonte. Sem isso os blocos estreitos saem com texto bem menor
+    // que os largos e a legenda fica visualmente desigual. Nunca encolhe abaixo
+    // de swatchW; para de crescer em maxSwatchW e ai sim reduz o corpo.
+    autoWidth: true,
+    maxSwatchW: 260,
     gapX: 18,
-    gapY: 26,
+    gapY: 26, // no bento vale para os dois eixos
     textSize: 9,
+    // Corpo minimo. Rotulo que nao cabe na largura do bloco encolhe ate aqui;
+    // abaixo disso preferimos deixar transbordar a entregar algo ilegivel.
+    minTextSize: 6,
     fontName: "", // "" = fonte padrao do documento. Ex.: "Helvetica"
+
+    // Só no bento: altura das linhas altas, como fator de swatchH.
+    bentoTallFactor: 1.5,
+    // Só no bento: respiro entre a borda do bloco e o texto, em pontos.
+    bentoPadding: 12,
 
     layerName: "Color Codes"
 };
@@ -258,6 +279,60 @@ function nearestPantone(rgb, count) {
     return best;
 }
 
+/*
+ * Escolhe preto ou branco para escrever em cima de uma cor, pela razao de
+ * contraste da WCAG 2.1. Devolve "black" ou "white".
+ *
+ * Nao e "escuro? entao branco": no meio da escala a conta muda de lado. Um
+ * amarelo forte tem luminancia alta e pede preto; um azul medio, do mesmo
+ * brilho aparente, pede branco.
+ */
+function relativeLuminance(rgb) {
+    var lin = [];
+    for (var i = 0; i < 3; i++) {
+        var c = clamp(rgb[i], 0, 255) / 255;
+        lin[i] = c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    }
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+}
+
+function pickTextColor(rgb) {
+    var L = relativeLuminance(rgb);
+    var contrastWithWhite = 1.05 / (L + 0.05);
+    var contrastWithBlack = (L + 0.05) / 0.05;
+    return contrastWithBlack >= contrastWithWhite ? "black" : "white";
+}
+
+/*
+ * Larguras dos blocos de uma linha do bento, em colunas.
+ *
+ * A soma bate exatamente com `columns` por construcao, entao nao ha como
+ * sobrar buraco nem estourar a linha. O deslocamento por `rowIndex` faz o bloco
+ * largo andar de lugar a cada linha, que e o que da o desenho de mosaico em vez
+ * de listras.
+ */
+function bentoRowSpans(columns, rowIndex) {
+    if (columns < 1) columns = 1;
+    if (columns === 1) return [1];
+
+    var spans = [];
+    var remaining = columns;
+    var i = 0;
+    while (remaining > 0) {
+        var span = ((rowIndex + i) % 3 === 0) ? 2 : 1;
+        if (span > remaining) span = remaining;
+        spans.push(span);
+        remaining -= span;
+        i++;
+    }
+    return spans;
+}
+
+/* Linhas altas e normais se alternam para o mosaico nao virar uma grade. */
+function bentoRowIsTall(rowIndex) {
+    return rowIndex % 3 === 1;
+}
+
 function formatNumbers(values) {
     var out = [];
     for (var i = 0; i < values.length; i++) out[i] = Math.round(values[i]);
@@ -267,15 +342,11 @@ function formatNumbers(values) {
 /*
  * Monta o texto do rotulo. Separado do desenho para poder ser testado.
  *
- * TODA linha de Pantone leva til, sem excecao, porque toda ela e o resultado de
- * uma busca por proximidade — nunca uma leitura da cor:
- *   "~"   aproximacao dentro de cfg.maxDeltaE
- *   "~~"  aproximacao fraca, confira num leque fisico
- *
- * Isso vale inclusive quando a cor ja e uma spot color. O nome exato dela sai
- * na primeira linha (rec.name); o Pantone mais proximo e calculado a parte e
- * pode perfeitamente cair em outro codigo. Marcar essa linha como exata daria
- * ao usuario um codigo errado com cara de certo.
+ * A linha de Pantone sai limpa, so o codigo. Vale lembrar que ela e sempre
+ * resultado de uma busca por proximidade, nunca uma leitura da cor — inclusive
+ * quando a cor ja e spot, porque o mais proximo e calculado a parte e pode cair
+ * em outro codigo. O nome exato da spot sai na primeira linha (rec.name), e o
+ * dE ao lado do codigo (cfg.showDeltaE) e o que sinaliza a distancia.
  */
 function buildLabel(rec, cfg) {
     var lines = [];
@@ -287,8 +358,9 @@ function buildLabel(rec, cfg) {
     if (cfg.showPantone && rec.pantone && rec.pantone.length) {
         for (var i = 0; i < rec.pantone.length; i++) {
             var hit = rec.pantone[i];
-            var prefix = hit.deltaE > cfg.maxDeltaE ? "~~ " : "~ ";
-            lines.push(prefix + hit.name + "  dE " + (Math.round(hit.deltaE * 10) / 10));
+            var line = hit.name;
+            if (cfg.showDeltaE) line += "  dE " + (Math.round(hit.deltaE * 10) / 10);
+            lines.push(line);
         }
     }
     return lines.join("\r");
@@ -437,15 +509,23 @@ function buildRecords(raw) {
     return { records: records, skipped: skipped };
 }
 
-function makeBlack(doc) {
+function makeFlatColor(doc, rgb, cmyk) {
     if (doc.documentColorSpace === DocumentColorSpace.CMYK) {
         var c = new CMYKColor();
-        c.cyan = 0; c.magenta = 0; c.yellow = 0; c.black = 100;
+        c.cyan = cmyk[0]; c.magenta = cmyk[1]; c.yellow = cmyk[2]; c.black = cmyk[3];
         return c;
     }
     var r = new RGBColor();
-    r.red = 0; r.green = 0; r.blue = 0;
+    r.red = rgb[0]; r.green = rgb[1]; r.blue = rgb[2];
     return r;
+}
+
+function makeBlack(doc) {
+    return makeFlatColor(doc, [0, 0, 0], [0, 0, 0, 100]);
+}
+
+function makeWhite(doc) {
+    return makeFlatColor(doc, [255, 255, 255], [0, 0, 0, 0]);
 }
 
 function countLines(text) {
@@ -454,7 +534,69 @@ function countLines(text) {
     return n;
 }
 
-function draw(doc, records) {
+function longestLineLength(text) {
+    var longest = 0;
+    var current = 0;
+    for (var i = 0; i < text.length; i++) {
+        if (text.charAt(i) === "\r") {
+            if (current > longest) longest = current;
+            current = 0;
+        } else {
+            current++;
+        }
+    }
+    return current > longest ? current : longest;
+}
+
+/*
+ * Corpo de texto que faz o rotulo caber em `maxWidth`.
+ *
+ * A largura e estimada por contagem de caracteres, nao medida: ler
+ * TextFrame.width obrigaria a criar o texto, medir e reposicionar, e a
+ * ancoragem de pointText muda de semantica no meio disso. O fator 0.55 em e
+ * uma media larga para as sem-serifa usadas em legenda — erra para o lado de
+ * encolher demais, que e o lado seguro.
+ *
+ * "PANTONE Neutral Black C  dE 2.5" tem 31 caracteres: a 9 pt pede ~153 pt de
+ * largura e nao cabe num bloco de 110. Sem isto o texto vaza por cima do bloco
+ * vizinho.
+ */
+/*
+ * Largura de coluna que faz o rotulo mais longo do conjunto caber no corpo
+ * base, dentro de [minWidth, maxWidth].
+ *
+ * Encolher a fonte por bloco resolve o transbordo mas entrega uma legenda
+ * desigual: os blocos de 2 colunas ficam com 9 pt e os de 1 coluna com 6 pt,
+ * lado a lado. Alargar a coluna mantem um corpo unico para tudo. A conta e
+ * feita para UMA coluna, entao os blocos largos sobram espaco — e o lado certo
+ * de errar.
+ */
+function autoUnitWidth(labels, baseSize, pad, minWidth, maxWidth) {
+    var longest = 0;
+    for (var i = 0; i < labels.length; i++) {
+        var n = longestLineLength(labels[i]);
+        if (n > longest) longest = n;
+    }
+    if (longest === 0) return minWidth;
+
+    var needed = longest * baseSize * 0.55 + pad * 2;
+    if (needed < minWidth) return minWidth;
+    if (needed > maxWidth) return maxWidth;
+    return Math.ceil(needed);
+}
+
+function fitTextSize(label, maxWidth, baseSize, minSize) {
+    var chars = longestLineLength(label);
+    if (chars <= 0 || maxWidth <= 0) return baseSize;
+
+    var fitted = maxWidth / (chars * 0.55);
+    if (fitted >= baseSize) return baseSize;
+    if (fitted < minSize) return minSize;
+    return Math.floor(fitted * 10) / 10;
+}
+
+/* Contexto de desenho compartilhado pelos dois layouts. */
+function makeCanvas(doc) {
     var layer;
     try {
         layer = doc.layers.getByName(CONFIG.layerName);
@@ -466,60 +608,173 @@ function draw(doc, records) {
     layer.visible = true;
 
     var board = doc.artboards[doc.artboards.getActiveArtboardIndex()].artboardRect;
-    var originX = board[0] + 20;
-    var originY = board[1] - 20;
-
-    var black = makeBlack(doc);
     var font = null;
     if (CONFIG.fontName) {
         try { font = app.textFonts.getByName(CONFIG.fontName); } catch (e) {}
     }
 
-    var lineHeight = CONFIG.textSize * 1.3;
     var group = layer.groupItems.add();
     group.name = "Color Codes";
 
+    return {
+        doc: doc,
+        group: group,
+        originX: board[0] + 20,
+        originY: board[1] - 20,
+        black: makeBlack(doc),
+        white: makeWhite(doc),
+        font: font,
+        lineHeight: CONFIG.textSize * 1.3
+    };
+}
+
+function drawTile(canvas, rec, x, y, w, h) {
+    var card = canvas.group.groupItems.add();
+    card.name = rec.name || rec.hex;
+
+    var rect = card.pathItems.rectangle(y, x, w, h);
+    rect.filled = true;
+    rect.stroked = false;
+    // Pinta com a cor reconstruida, para bater com os valores exibidos.
+    rect.fillColor = makeFlatColor(canvas.doc, rec.rgb, rec.cmyk);
+
+    return card;
+}
+
+function drawText(canvas, card, label, x, baselineY, color, size) {
+    var text = card.textFrames.pointText([x, baselineY]);
+    text.contents = label;
+    try {
+        text.textRange.characterAttributes.size = size;
+        text.textRange.characterAttributes.leading = size * 1.3;
+        text.textRange.characterAttributes.fillColor = color;
+        if (canvas.font) text.textRange.characterAttributes.textFont = canvas.font;
+    } catch (e) {}
+    return text;
+}
+
+/*
+ * Grade uniforme: amostra em cima, rotulo em preto embaixo.
+ *
+ * A altura de linha e uma so, calculada pelo rotulo mais alto do conjunto. Ela
+ * precisa ser uniforme porque a posicao de cada item e o indice da linha vezes
+ * a altura — usar a altura do proprio item desalinharia tudo assim que dois
+ * rotulos tivessem numeros de linhas diferentes.
+ */
+function drawGrid(canvas, records) {
+    var labels = [];
+    for (var m = 0; m < records.length; m++) labels[m] = buildLabel(records[m], CONFIG);
+
+    // No grid o rotulo fica fora da amostra, entao pode usar tambem o respiro
+    // ate a coluna seguinte.
+    var unitW = CONFIG.autoWidth
+        ? autoUnitWidth(labels, CONFIG.textSize, 0, CONFIG.swatchW, CONFIG.maxSwatchW) - CONFIG.gapX
+        : CONFIG.swatchW;
+    if (unitW < CONFIG.swatchW) unitW = CONFIG.swatchW;
+    var textWidth = unitW + CONFIG.gapX;
+
+    var sizes = [];
+    var tallest = 0;
+    for (var n = 0; n < records.length; n++) {
+        sizes[n] = fitTextSize(labels[n], textWidth, CONFIG.textSize, CONFIG.minTextSize);
+        var h = countLines(labels[n]) * sizes[n] * 1.3;
+        if (h > tallest) tallest = h;
+    }
+    var rowH = CONFIG.swatchH + tallest + CONFIG.gapY;
+
     for (var i = 0; i < records.length; i++) {
-        var rec = records[i];
-        var label = buildLabel(rec, CONFIG);
-        var textH = countLines(label) * lineHeight;
-        var rowH = CONFIG.swatchH + textH + CONFIG.gapY;
+        var x = canvas.originX + (i % CONFIG.columns) * (unitW + CONFIG.gapX);
+        var y = canvas.originY - Math.floor(i / CONFIG.columns) * rowH;
 
-        var col = i % CONFIG.columns;
-        var row = Math.floor(i / CONFIG.columns);
-        var x = originX + col * (CONFIG.swatchW + CONFIG.gapX);
-        var y = originY - row * rowH;
+        var card = drawTile(canvas, records[i], x, y, unitW, CONFIG.swatchH);
+        drawText(canvas, card, labels[i], x,
+                 y - CONFIG.swatchH - sizes[i] - 4, canvas.black, sizes[i]);
+    }
+}
 
-        var card = group.groupItems.add();
-        card.name = rec.name || rec.hex;
+/*
+ * Bento: mosaico de blocos de larguras e alturas variadas, com o rotulo dentro
+ * da propria cor, alinhado ao pe do bloco.
+ *
+ * A altura de cada linha e o maior entre a altura nominal (normal ou alta) e o
+ * que o rotulo mais longo daquela linha precisa. Sem isso um bloco com nome
+ * comprido e dois Pantones estouraria para fora da cor.
+ */
+function drawBento(canvas, records) {
+    var pad = CONFIG.bentoPadding;
+    var minBody = CONFIG.textSize * 2; // area de cor visivel acima do texto
 
-        var rect = card.pathItems.rectangle(y, x, CONFIG.swatchW, CONFIG.swatchH);
-        rect.filled = true;
-        rect.stroked = false;
+    var allLabels = [];
+    for (var m = 0; m < records.length; m++) allLabels[m] = buildLabel(records[m], CONFIG);
 
-        // Pinta com a cor reconstruida, para bater com os valores exibidos.
-        if (doc.documentColorSpace === DocumentColorSpace.CMYK) {
-            var fc = new CMYKColor();
-            fc.cyan = rec.cmyk[0]; fc.magenta = rec.cmyk[1];
-            fc.yellow = rec.cmyk[2]; fc.black = rec.cmyk[3];
-            rect.fillColor = fc;
-        } else {
-            var fr = new RGBColor();
-            fr.red = rec.rgb[0]; fr.green = rec.rgb[1]; fr.blue = rec.rgb[2];
-            rect.fillColor = fr;
+    var unitW = CONFIG.autoWidth
+        ? autoUnitWidth(allLabels, CONFIG.textSize, pad, CONFIG.swatchW, CONFIG.maxSwatchW)
+        : CONFIG.swatchW;
+
+    var y = canvas.originY;
+    var index = 0;
+    var rowIndex = 0;
+
+    while (index < records.length) {
+        var spans = bentoRowSpans(CONFIG.columns, rowIndex);
+
+        // Mede a linha antes de desenhar: precisamos da largura de cada bloco
+        // para ajustar o corpo do texto, e da altura final de todos eles para
+        // que fiquem alinhados entre si.
+        var rowRecs = [];
+        var rowLabels = [];
+        var rowSizes = [];
+        var rowWidths = [];
+        var needed = 0;
+        for (var s = 0; s < spans.length && index + s < records.length; s++) {
+            var rec = records[index + s];
+            var label = allLabels[index + s];
+            var w = unitW * spans[s] + CONFIG.gapX * (spans[s] - 1);
+            var size = fitTextSize(label, w - pad * 2, CONFIG.textSize, CONFIG.minTextSize);
+
+            rowRecs.push(rec);
+            rowLabels.push(label);
+            rowSizes.push(size);
+            rowWidths.push(w);
+
+            var labelH = countLines(label) * size * 1.3 + pad * 2 + minBody;
+            if (labelH > needed) needed = labelH;
+        }
+        if (!rowRecs.length) break;
+
+        var nominal = CONFIG.swatchH * (bentoRowIsTall(rowIndex) ? CONFIG.bentoTallFactor : 1);
+        var rowH = nominal > needed ? nominal : needed;
+
+        var x = canvas.originX;
+        for (var c = 0; c < rowRecs.length; c++) {
+            var card = drawTile(canvas, rowRecs[c], x, y, rowWidths[c], rowH);
+
+            // pointText ancora na linha de base da PRIMEIRA linha e as
+            // seguintes descem. Para encostar o bloco de texto no pe do bloco,
+            // sobe (n-1) entrelinhas a partir do rodape.
+            var lines = countLines(rowLabels[c]);
+            var baseline = (y - rowH) + pad +
+                (lines - 1) * rowSizes[c] * 1.3 + rowSizes[c] * 0.25;
+            var ink = pickTextColor(rowRecs[c].rgb) === "white" ? canvas.white : canvas.black;
+
+            drawText(canvas, card, rowLabels[c], x + pad, baseline, ink, rowSizes[c]);
+            x += rowWidths[c] + CONFIG.gapX;
         }
 
-        var text = card.textFrames.pointText([x, y - CONFIG.swatchH - CONFIG.textSize - 4]);
-        text.contents = label;
-        try {
-            text.textRange.characterAttributes.size = CONFIG.textSize;
-            text.textRange.characterAttributes.leading = lineHeight;
-            text.textRange.characterAttributes.fillColor = black;
-            if (font) text.textRange.characterAttributes.textFont = font;
-        } catch (e) {}
+        index += rowRecs.length;
+        y -= rowH + CONFIG.gapY;
+        rowIndex++;
     }
+}
 
-    return group;
+function draw(doc, records) {
+    var canvas = makeCanvas(doc);
+    if (CONFIG.layout === "bento") {
+        drawBento(canvas, records);
+    } else {
+        drawGrid(canvas, records);
+    }
+    return canvas.group;
 }
 
 function main() {

@@ -9,10 +9,21 @@ cada cor única encontrada, desenha uma amostra e escreve **nome**, **HEX**,
 │ Vermelho da marca
 │ HEX #E4002B
 │ CMYK 0 100 81 4
-│ ~ PANTONE 199 C  dE 1.9
-│ ~ PANTONE 1795 C  dE 2.2
+│ PANTONE 199 C  dE 1.9
+│ PANTONE 1795 C  dE 2.2
 └─────────────────────────────
 ```
+
+Dois layouts, via `CONFIG.layout`:
+
+- **`"bento"`** (padrão) — mosaico de blocos de larguras e alturas variadas, com
+  o rótulo dentro da própria cor, em preto ou branco escolhido por contraste
+  (razão WCAG, não um teste de "é escuro?" — amarelo forte é claro e pede preto).
+- **`"grid"`** — grade uniforme, amostra em cima e rótulo em preto embaixo.
+
+A largura da coluna se adapta ao rótulo mais longo (`autoWidth`), de modo que a
+legenda inteira use um corpo de texto só. Sem isso os blocos estreitos sairiam
+com texto bem menor que os largos.
 
 ## Como usar
 
@@ -46,12 +57,25 @@ Abra o `.jsx` num editor de texto: o bloco `CONFIG`, no topo, controla tudo.
 | `includeStrokes` | `true` | também coletar cor de contorno |
 | `showName` / `showHex` / `showCMYK` / `showRGB` / `showPantone` | | liga e desliga cada linha do rótulo |
 | `pantoneCount` | `2` | quantos Pantones próximos listar |
-| `maxDeltaE` | `10` | acima disso o match vira `~~` |
-| `columns` | `5` | colunas da grade |
-| `swatchW` / `swatchH` / `gapX` / `gapY` | | tamanho e espaçamento, em pontos |
+| `showDeltaE` | `true` | mostra o ΔE ao lado do código Pantone |
+| `maxDeltaE` | `10` | acima disso o match é considerado fraco |
+| `layout` | `"bento"` | `"bento"` ou `"grid"` |
+| `columns` | `4` | colunas da grade |
+| `swatchW` / `swatchH` | `110` | largura de 1 coluna e altura de linha, em pontos |
+| `autoWidth` | `true` | alarga a coluna até o rótulo caber no corpo base |
+| `maxSwatchW` | `260` | teto para o alargamento automático |
+| `gapX` / `gapY` | `18` / `26` | espaçamento entre blocos, em pontos |
 | `textSize` | `9` | corpo do texto |
+| `minTextSize` | `6` | piso ao encolher texto que não coube |
+| `bentoTallFactor` | `1.5` | altura das linhas altas do bento |
+| `bentoPadding` | `12` | respiro entre a borda do bloco e o texto |
 | `fontName` | `""` | `""` usa a fonte padrão; ex.: `"Helvetica"` |
 | `layerName` | `"Color Codes"` | camada de destino, reutilizada a cada execução |
+
+Se algum rótulo ainda encostar na borda, o caminho é `columns: 3` ou
+`showDeltaE: false` — não `minTextSize` menor. Quando `autoWidth` bate no teto
+de `maxSwatchW`, o texto encolhe até `minTextSize` e, a partir daí, transborda
+de propósito: texto ilegível numa legenda de cor é pior que texto apertado.
 
 ## Sobre o Pantone: leia antes de mandar para gráfica
 
@@ -60,16 +84,14 @@ consegue devolver o *nome* de uma spot color que já veio de uma biblioteca
 Pantone. Não existe função de conversão — qualquer script que prometa isso está
 consultando uma tabela, como este aqui.
 
-Por isso toda linha de Pantone sai marcada:
+O número `dE` ao lado do código é a distância perceptual
+[CIEDE2000](https://en.wikipedia.org/wiki/Color_difference#CIEDE2000) entre a
+sua cor e aquele Pantone: abaixo de 1 é imperceptível, 2–3 é perceptível lado a
+lado, acima de 10 já é outra cor. É o que sinaliza que a linha é aproximação.
 
-| Marca | Significado |
-| --- | --- |
-| `~` | aproximação dentro de `maxDeltaE` |
-| `~~` | aproximação fraca, confira num leque físico |
-
-O número `dE` é a distância perceptual [CIEDE2000](https://en.wikipedia.org/wiki/Color_difference#CIEDE2000):
-abaixo de 1 é imperceptível, 2–3 é perceptível lado a lado, acima de 10 já é
-outra cor.
+Isso vale inclusive quando a cor já é uma spot color: o nome exato dela sai na
+primeira linha do rótulo, mas as linhas de Pantone abaixo continuam sendo o
+resultado da busca por proximidade, que pode cair em outro código.
 
 Três limites que valem entender:
 
@@ -114,9 +136,22 @@ node illustrator/tools/build-pantone-table.cjs /tmp/pantonr/dist/pantone_coated.
 Testes (rodam em Node, sem Illustrator):
 
 ```bash
-node illustrator/test/color-math.test.cjs   # matemática de cor
+node illustrator/test/color-math.test.cjs   # matemática de cor e diagramação
 node illustrator/test/integration.test.cjs  # script inteiro contra um DOM simulado
 ```
+
+Preview da diagramação, sem abrir o Illustrator:
+
+```bash
+node illustrator/tools/preview.cjs bento   # gera illustrator/preview-bento.svg
+node illustrator/tools/preview.cjs grid
+```
+
+O preview roda o mesmo `.jsx` contra o mesmo DOM simulado dos testes e desenha
+em SVG os retângulos e textos que saíram — a geometria é a de verdade, só o meio
+de saída muda. Vale a pena olhar depois de mexer em qualquer coisa de layout: foi
+o preview, e não os testes de geometria, que revelou o rótulo vazando para fora
+do bloco pela direita.
 
 Os dois carregam o `.jsx` de verdade — o mesmo arquivo que roda no Illustrator,
 não uma cópia. O CIEDE2000 é verificado contra o
