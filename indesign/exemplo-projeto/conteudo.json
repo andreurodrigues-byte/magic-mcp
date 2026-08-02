@@ -1,0 +1,74 @@
+{
+  // Este arquivo e lido pelo GerarApresentacao.jsx.
+  // Ele e avaliado como objeto JavaScript, entao comentarios como este
+  // sao permitidos (JSON puro tambem funciona).
+
+  "documento": {
+    "modelo": "modelo.indt",          // opcional: se omitir, usa o .indt/.indd da raiz
+    "nomeSaida": "apresentacao-cliente-x",
+    "pastaSaida": "saida",
+    "ajustarTextoQueNaoCabe": true,   // reduz o corpo quando o texto estoura o frame
+    "exportarPDF": false,             // true tambem gera o PDF em saida/
+    "presetPDF": "[High Quality Print]",
+    "empacotar": false                // true roda Empacotar (fontes + links)
+  },
+
+  // Disponiveis como {{cliente}}, {{projeto}} etc. em qualquer pagina.
+  "variaveis": {
+    "cliente": "Cliente X",
+    "projeto": "Campanha institucional",
+    "data": "Agosto de 2026"
+  },
+
+  "slides": [
+    {
+      "layout": "A-Capa",
+      "textos": {
+        "titulo": "Campanha institucional 2026",
+        "subtitulo": "Proposta de criacao"
+      },
+      "imagens": {
+        "imagem-fundo": { "arquivo": "imagens/capa.jpg", "ajuste": "preencher" }
+      }
+    },
+    {
+      "layout": "B-Texto",
+      "textos": {
+        "titulo": "Contexto",
+        "corpo": [
+          "Primeiro paragrafo do texto.",
+          "Segundo paragrafo: cada item da lista vira um paragrafo.",
+          "Terceiro paragrafo."
+        ]
+      }
+    },
+    {
+      "layout": "C-Texto e Imagem",
+      "textos": {
+        "titulo": "Conceito",
+        "corpo": "Texto curto ao lado da imagem."
+      },
+      "imagens": {
+        "foto": "imagens/conceito.jpg"   // forma curta: so o caminho
+      }
+    },
+    {
+      "layout": "D-Galeria",
+      "textos": {
+        "titulo": "Referencias"
+      },
+      "imagens": {
+        "foto-1": "imagens/ref-01.jpg",
+        "foto-2": "imagens/ref-02.jpg",
+        "foto-3": { "arquivo": "imagens/ref-03.jpg", "ajuste": "conter" }
+      }
+    },
+    {
+      "layout": "E-Encerramento",
+      "textos": {
+        "titulo": "Obrigado",
+        "contato": "contato@agencia.com.br"
+      }
+    }
+  ]
+}
