@@ -336,13 +336,16 @@ ok("linhas altas sao minoria mas existem", tallCount > 0 && tallCount < 12, tall
 // ---------------------------------------------------------------------------
 console.log("\nfitTextSize - rotulo cabendo na largura do bloco");
 // ---------------------------------------------------------------------------
+// fitTextSize recebe CONTAGEM de caracteres: no cartao o que ocupa a linha e a
+// soma do rotulo com o valor em colunas opostas, nao a maior string.
 ok("linha curta mantem o corpo base",
-    sandbox.fitTextSize("HEX #FFF", 200, 9, 6) === 9,
-    "" + sandbox.fitTextSize("HEX #FFF", 200, 9, 6));
+    sandbox.fitTextSize(8, 200, 9, 6) === 9,
+    "" + sandbox.fitTextSize(8, 200, 9, 6));
 
 // O caso real que fazia o texto vazar por cima do bloco vizinho.
 var longLabel = "PANTONE Neutral Black C  dE 2.5";
-var narrow = sandbox.fitTextSize(longLabel, 110 - 24, 9, 6);
+var longChars = longLabel.length;
+var narrow = sandbox.fitTextSize(longChars, 110 - 24, 9, 6);
 ok("rotulo longo em bloco estreito encolhe", narrow < 9, "" + narrow);
 ok("nunca encolhe abaixo do minimo", narrow >= 6, "" + narrow);
 
@@ -353,59 +356,54 @@ ok("nunca encolhe abaixo do minimo", narrow >= 6, "" + narrow);
  * legenda de cor e pior que texto que encosta na borda. Quando isso incomodar,
  * a saida e menos colunas ou showDeltaE: false, nao um corpo menor.
  */
-var fitsAt = function (label, size, width) {
-    return label.length * size * 0.55 <= width + 0.5;
+var fitsAt = function (chars, size, width) {
+    return chars * size * 0.55 <= width + 0.5;
 };
 ok("ou cabe, ou parou no piso",
-    fitsAt(longLabel, narrow, 110 - 24) || narrow === 6,
-    "corpo " + narrow + ", precisaria de " + (86 / (longLabel.length * 0.55)).toFixed(2));
+    fitsAt(longChars, narrow, 110 - 24) || narrow === 6,
+    "corpo " + narrow + ", precisaria de " + (86 / (longChars * 0.55)).toFixed(2));
 
 // Onde o piso NAO e atingido, tem de caber de verdade.
-var mid = sandbox.fitTextSize(longLabel, 140, 9, 6);
+var mid = sandbox.fitTextSize(longChars, 140, 9, 6);
 ok("acima do piso, o encolhido realmente cabe",
-    mid > 6 && fitsAt(longLabel, mid, 140), "corpo " + mid);
+    mid > 6 && fitsAt(longChars, mid, 140), "corpo " + mid);
 
 ok("bloco largo cabe o mesmo rotulo sem encolher",
-    sandbox.fitTextSize(longLabel, 238 - 24, 9, 6) === 9,
-    "" + sandbox.fitTextSize(longLabel, 238 - 24, 9, 6));
+    sandbox.fitTextSize(longChars, 238 - 24, 9, 6) === 9,
+    "" + sandbox.fitTextSize(longChars, 238 - 24, 9, 6));
 
 ok("largura absurdamente pequena para no minimo",
-    sandbox.fitTextSize(longLabel, 5, 9, 6) === 6,
-    "" + sandbox.fitTextSize(longLabel, 5, 9, 6));
-ok("largura zero nao quebra", sandbox.fitTextSize(longLabel, 0, 9, 6) === 9);
-ok("rotulo vazio nao quebra", sandbox.fitTextSize("", 100, 9, 6) === 9);
+    sandbox.fitTextSize(longChars, 5, 9, 6) === 6,
+    "" + sandbox.fitTextSize(longChars, 5, 9, 6));
+ok("largura zero nao quebra", sandbox.fitTextSize(longChars, 0, 9, 6) === 9);
+ok("contagem zero nao quebra", sandbox.fitTextSize(0, 100, 9, 6) === 9);
 
-// A medida tem de ser a linha MAIS LONGA, nao a primeira nem a ultima.
+// longestLineLength continua servindo o layout em grade, que e texto corrido.
 var multi = "ab\rPANTONE Neutral Black C  dE 2.5\rcd";
-ok("mede a linha mais longa do bloco",
-    sandbox.fitTextSize(multi, 86, 9, 6) === sandbox.fitTextSize(longLabel, 86, 9, 6),
-    sandbox.fitTextSize(multi, 86, 9, 6) + " vs " + sandbox.fitTextSize(longLabel, 86, 9, 6));
-ok("longestLineLength ignora os \\r", sandbox.longestLineLength(multi) === longLabel.length,
-    sandbox.longestLineLength(multi) + " vs " + longLabel.length);
+ok("longestLineLength ignora os \\r", sandbox.longestLineLength(multi) === longChars,
+    sandbox.longestLineLength(multi) + " vs " + longChars);
 ok("longestLineLength de linha unica", sandbox.longestLineLength("abcd") === 4);
 ok("longestLineLength de string vazia", sandbox.longestLineLength("") === 0);
 
 // ---------------------------------------------------------------------------
 console.log("\nautoUnitWidth - coluna se adapta ao rotulo");
 // ---------------------------------------------------------------------------
-var shortLabels = ["HEX #FFF", "HEX #000"];
-ok("rotulos curtos nao encolhem a coluna abaixo do minimo",
-    sandbox.autoUnitWidth(shortLabels, 9, 12, 110, 260) === 110,
-    "" + sandbox.autoUnitWidth(shortLabels, 9, 12, 110, 260));
+ok("cartoes curtos nao encolhem a coluna abaixo do minimo",
+    sandbox.autoUnitWidth([8, 8], 9, 12, 110, 260) === 110,
+    "" + sandbox.autoUnitWidth([8, 8], 9, 12, 110, 260));
 
-var wide = sandbox.autoUnitWidth(["PANTONE Neutral Black C  dE 2.5"], 9, 12, 110, 260);
-ok("rotulo longo alarga a coluna", wide > 110, "" + wide);
+var wide = sandbox.autoUnitWidth([longChars], 9, 12, 110, 260);
+ok("cartao longo alarga a coluna", wide > 110, "" + wide);
 ok("na coluna alargada o texto cabe no corpo base",
-    sandbox.fitTextSize("PANTONE Neutral Black C  dE 2.5", wide - 24, 9, 6) === 9,
-    "corpo " + sandbox.fitTextSize("PANTONE Neutral Black C  dE 2.5", wide - 24, 9, 6));
+    sandbox.fitTextSize(longChars, wide - 24, 9, 6) === 9,
+    "corpo " + sandbox.fitTextSize(longChars, wide - 24, 9, 6));
 
-var huge = new Array(200).join("x");
-ok("rotulo absurdo para no maximo",
-    sandbox.autoUnitWidth([huge], 9, 12, 110, 260) === 260,
-    "" + sandbox.autoUnitWidth([huge], 9, 12, 110, 260));
+ok("cartao absurdo para no maximo",
+    sandbox.autoUnitWidth([200], 9, 12, 110, 260) === 260,
+    "" + sandbox.autoUnitWidth([200], 9, 12, 110, 260));
 ok("lista vazia devolve o minimo", sandbox.autoUnitWidth([], 9, 12, 110, 260) === 110);
-ok("manda o rotulo mais longo da lista, nao o primeiro",
-    sandbox.autoUnitWidth(["ab", "PANTONE Neutral Black C  dE 2.5"], 9, 12, 110, 260) === wide);
+ok("manda o cartao mais largo da lista, nao o primeiro",
+    sandbox.autoUnitWidth([2, longChars], 9, 12, 110, 260) === wide);
 
 // ---------------------------------------------------------------------------
 console.log("\nbuildLabel - montagem do rotulo");
@@ -423,57 +421,114 @@ function makeRec() {
     };
 }
 var cfg = {
-    showName: true, showHex: true, showCMYK: true, showRGB: true,
+    showName: true, uppercaseName: true,
+    showHex: true, showCMYK: true, showRGB: true,
     showPantone: true, showDeltaE: true, maxDeltaE: 10
 };
 
-var lines = sandbox.buildLabel(makeRec(), cfg).split("\r");
-ok("6 linhas (4 fixas + 2 pantones)", lines.length === 6, lines.length + ": " + lines.join(" / "));
-ok("linha 1 e o nome", lines[0] === "Vermelho da marca", lines[0]);
-ok("linha 2 e o hex", lines[1] === "HEX #E4002B", lines[1]);
-ok("linha 3 e o cmyk arredondado", lines[2] === "CMYK 0 100 81 4", lines[2]);
-ok("linha 4 e o rgb", lines[3] === "RGB 228 0 43", lines[3]);
-ok("pantone sai limpo, com o dE", lines[4] === "PANTONE 185 C  dE 1.8", lines[4]);
-ok("segundo colocado tambem aparece", lines[5] === "PANTONE 199 C  dE 2.2", lines[5]);
+var card = sandbox.buildCard(makeRec(), cfg);
+ok("titulo e o nome em caixa alta", card.title === "VERMELHO DA MARCA", card.title);
+ok("badge e o Pantone mais proximo, com dE",
+    card.badge === "PANTONE 185 C  dE 1.8", card.badge);
+// A fixture tem 2 Pantones: 3 linhas de valor + 1 do Pantone alternativo.
+ok("4 linhas de valor", card.rows.length === 4,
+    card.rows.length + ": " + JSON.stringify(card.rows));
+ok("linha HEX", card.rows[0].label === "HEX" && card.rows[0].value === "#E4002B",
+    JSON.stringify(card.rows[0]));
+ok("linha RGB separada por virgula",
+    card.rows[1].label === "RGB" && card.rows[1].value === "228, 0, 43",
+    JSON.stringify(card.rows[1]));
+ok("linha CMYK arredondada e separada por virgula",
+    card.rows[2].label === "CMYK" && card.rows[2].value === "0, 100, 81, 4",
+    JSON.stringify(card.rows[2]));
 
-// Nenhuma linha pode voltar a sair com til, em nenhuma condicao.
+// Nada de til em lugar nenhum do cartao, em nenhuma condicao.
 var weak = makeRec();
 weak.pantone[0].deltaE = 18;
-var weakLines = sandbox.buildLabel(weak, cfg).split("\r");
-ok("match fraco tambem sai sem til", weakLines[4] === "PANTONE 185 C  dE 18", weakLines[4]);
-var anyTilde = false;
-for (var wl = 0; wl < weakLines.length; wl++) {
-    if (weakLines[wl].indexOf("~") !== -1) anyTilde = true;
+var weakCard = sandbox.buildCard(weak, cfg);
+var weakText = weakCard.title + weakCard.badge;
+for (var wr = 0; wr < weakCard.rows.length; wr++) {
+    weakText += weakCard.rows[wr].label + weakCard.rows[wr].value;
 }
-ok("nenhum til em lugar nenhum do rotulo", anyTilde === false, weakLines.join(" / "));
+ok("match fraco nao ganha marcacao", weakCard.badge === "PANTONE 185 C  dE 18",
+    weakCard.badge);
+ok("nenhum til no cartao", weakText.indexOf("~") === -1, weakText);
 
-var noDe = sandbox.buildLabel(makeRec(), {
-    showName: false, showHex: false, showCMYK: false, showRGB: false,
-    showPantone: true, showDeltaE: false, maxDeltaE: 10
+ok("caixa alta desligada preserva o nome",
+    sandbox.buildCard(makeRec(), {
+        showName: true, uppercaseName: false, showHex: true,
+        showPantone: false, showDeltaE: false
+    }).title === "Vermelho da marca");
+
+var noDe = sandbox.buildCard(makeRec(), {
+    showName: false, showPantone: true, showDeltaE: false
 });
-ok("showDeltaE desligado deixa so o codigo",
-    noDe === "PANTONE 185 C\rPANTONE 199 C", JSON.stringify(noDe));
+ok("showDeltaE desligado deixa so o codigo no badge",
+    noDe.badge === "PANTONE 185 C", noDe.badge);
 
-// O nome exato de uma spot fica no titulo; a linha de Pantone abaixo continua
-// sendo o resultado da busca, que pode cair em outro codigo.
-var spotRec = makeRec();
-spotRec.name = "PANTONE 185 C";
-var spotLines = sandbox.buildLabel(spotRec, cfg).split("\r");
-ok("spot color: nome exato fica no titulo", spotLines[0] === "PANTONE 185 C", spotLines[0]);
+// Do segundo Pantone em diante, viram linhas do bloco de valores.
+var twoRec = makeRec();
+var twoCard = sandbox.buildCard(twoRec, cfg);
+ok("com 2 pantones o segundo vira linha do corpo",
+    twoCard.rows.length === 4 &&
+    twoCard.rows[3].label === "PANTONE" &&
+    twoCard.rows[3].value === "PANTONE 199 C  dE 2.2",
+    JSON.stringify(twoCard.rows[3]));
 
-var minimal = sandbox.buildLabel(makeRec(), {
+var oneRec = makeRec();
+oneRec.pantone = [oneRec.pantone[0]];
+ok("com 1 pantone o corpo fica so com os valores",
+    sandbox.buildCard(oneRec, cfg).rows.length === 3);
+
+var minimal = sandbox.buildCard(makeRec(), {
     showName: false, showHex: true, showCMYK: false, showRGB: false,
-    showPantone: false, showDeltaE: true, maxDeltaE: 10
+    showPantone: false, showDeltaE: true
 });
-ok("flags desligadas removem linhas", minimal === "HEX #E4002B", minimal);
+ok("flags desligadas removem linhas", minimal.rows.length === 1 && minimal.badge === "",
+    JSON.stringify(minimal));
 
 var noPantone = makeRec();
 noPantone.pantone = [];
-ok("lista de pantone vazia nao gera linha solta",
-    sandbox.buildLabel(noPantone, cfg).split("\r").length === 4);
+ok("lista de pantone vazia deixa o badge vazio",
+    sandbox.buildCard(noPantone, cfg).badge === "");
 noPantone.pantone = null;
-ok("pantone nulo nao quebra",
-    sandbox.buildLabel(noPantone, cfg).split("\r").length === 4);
+ok("pantone nulo nao quebra", sandbox.buildCard(noPantone, cfg).rows.length === 3);
+
+// ---------------------------------------------------------------------------
+console.log("\ncardTextChars - largura em colunas opostas");
+// ---------------------------------------------------------------------------
+/*
+ * O que ocupa a linha e rotulo + valor + folga, nao a maior string: os dois
+ * ficam em cantos opostos do cartao. Medir so a maior string subdimensionaria
+ * o cartao e faria as duas colunas colidirem no meio.
+ */
+var wideCard = {
+    title: "AAAA", badge: "BBBB",
+    rows: [{ label: "HEX", value: "#FFFFFF" }]
+};
+// "HEX" + "#FFFFFF" + 6 = 16 e maior que "AAAA" + "BBBB" + 6 = 14: vence a linha.
+ok("mede o maior entre cabecalho e linhas",
+    sandbox.cardTextChars(wideCard, 6) === 16, "" + sandbox.cardTextChars(wideCard, 6));
+ok("cabecalho vence quando for o maior",
+    sandbox.cardTextChars({
+        title: "NOME BEM COMPRIDO", badge: "PANTONE 1795 C",
+        rows: [{ label: "HEX", value: "#FFFFFF" }]
+    }, 6) === 37);
+ok("a linha mais larga vence o cabecalho quando for maior",
+    sandbox.cardTextChars({
+        title: "A", badge: "B",
+        rows: [{ label: "CMYK", value: "100, 100, 100, 100" }]
+    }, 6) === 28);
+ok("cartao sem cabecalho usa so as linhas",
+    sandbox.cardTextChars({ title: "", badge: "", rows: [{ label: "AB", value: "CD" }] }, 6) === 10);
+ok("cartao vazio da zero",
+    sandbox.cardTextChars({ title: "", badge: "", rows: [] }, 6) === 0);
+
+var lines = sandbox.cardToLines(card);
+ok("cardToLines empilha titulo, badge e linhas",
+    lines.length === 6 && lines[0] === "VERMELHO DA MARCA" &&
+    lines[1] === "PANTONE 185 C  dE 1.8" && lines[2] === "HEX #E4002B",
+    JSON.stringify(lines));
 
 // ---------------------------------------------------------------------------
 console.log(

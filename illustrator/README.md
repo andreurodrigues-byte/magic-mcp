@@ -5,25 +5,34 @@ cada cor única encontrada, desenha uma amostra e escreve **nome**, **HEX**,
 **CMYK**, **RGB** e o **Pantone Solid Coated mais próximo**.
 
 ```
-┌─────────────────────────────
-│ Vermelho da marca
-│ HEX #E4002B
-│ CMYK 0 100 81 4
-│ PANTONE 199 C  dE 1.9
-│ PANTONE 1795 C  dE 2.2
-└─────────────────────────────
+┌──────────────────────────────────────────┐
+│  VERMELHO DA MARCA    PANTONE 199 C dE 1.9│
+│                                           │
+│                                           │
+│  HEX                              #E4002B │
+│  RGB                            228, 0, 43│
+│  CMYK                        0, 100, 81, 4│
+└──────────────────────────────────────────┘
 ```
 
 Dois layouts, via `CONFIG.layout`:
 
-- **`"bento"`** (padrão) — mosaico de blocos de larguras e alturas variadas, com
-  o rótulo dentro da própria cor, em preto ou branco escolhido por contraste
-  (razão WCAG, não um teste de "é escuro?" — amarelo forte é claro e pede preto).
-- **`"grid"`** — grade uniforme, amostra em cima e rótulo em preto embaixo.
+- **`"bento"`** (padrão) — cartões de cantos arredondados sobre um painel claro:
+  nome no canto superior esquerdo, Pantone no direito, e os valores no rodapé em
+  duas colunas. Com `bentoMosaic: true` os cartões passam a ter larguras e
+  alturas variadas, como um bento de verdade.
+- **`"grid"`** — grade simples, amostra em cima e rótulo em texto corrido abaixo.
 
-A largura da coluna se adapta ao rótulo mais longo (`autoWidth`), de modo que a
-legenda inteira use um corpo de texto só. Sem isso os blocos estreitos sairiam
-com texto bem menor que os largos.
+Dois detalhes que fazem o cartão funcionar:
+
+- **A cor do texto é derivada da própria cor**, não preto ou branco chapado:
+  mesma matiz, luminosidade empurrada para o lado oposto até atingir o contraste
+  AA da WCAG (4.5:1). Dá magenta escuro sobre rosa, oliva sobre amarelo, rosa
+  claro sobre vinho. Só cai para preto/branco quando nenhuma variação de
+  luminosidade daquela matiz alcança o contraste.
+- **A largura da coluna se adapta ao conteúdo** (`autoWidth`), de modo que a
+  legenda inteira use um corpo de texto só. Sem isso os cartões estreitos
+  sairiam com texto bem menor que os largos.
 
 ## Como usar
 
@@ -56,23 +65,29 @@ Abra o `.jsx` num editor de texto: o bloco `CONFIG`, no topo, controla tudo.
 | `source` | `"auto"` | `"auto"`, `"selection"` ou `"swatches"` |
 | `includeStrokes` | `true` | também coletar cor de contorno |
 | `showName` / `showHex` / `showCMYK` / `showRGB` / `showPantone` | | liga e desliga cada linha do rótulo |
-| `pantoneCount` | `2` | quantos Pantones próximos listar |
+| `uppercaseName` | `true` | nome do cartão em caixa alta |
+| `pantoneCount` | `1` | quantos Pantones listar; o 1º vai no cabeçalho, os demais viram linhas |
 | `showDeltaE` | `true` | mostra o ΔE ao lado do código Pantone |
 | `maxDeltaE` | `10` | acima disso o match é considerado fraco |
 | `layout` | `"bento"` | `"bento"` ou `"grid"` |
-| `columns` | `4` | colunas da grade |
-| `swatchW` / `swatchH` | `110` | largura de 1 coluna e altura de linha, em pontos |
-| `autoWidth` | `true` | alarga a coluna até o rótulo caber no corpo base |
-| `maxSwatchW` | `260` | teto para o alargamento automático |
-| `gapX` / `gapY` | `18` / `26` | espaçamento entre blocos, em pontos |
+| `columns` | `3` | colunas da grade |
+| `swatchW` / `swatchH` | `240` / `150` | largura de 1 coluna e altura de linha, em pontos |
+| `autoWidth` | `true` | alarga a coluna até o cartão caber no corpo base |
+| `maxSwatchW` | `420` | teto para o alargamento automático |
+| `bentoMosaic` | `false` | cartões de tamanhos variados em vez de uniformes |
+| `cornerRadius` | `12` | arredondamento dos cartões |
+| `panelColor` / `panelPadding` / `panelRadius` | | painel atrás dos cartões; `null` desliga |
+| `backgroundColor` / `backgroundPadding` | | fundo atrás do painel; `null` desliga |
+| `minInkContrast` | `4.5` | contraste mínimo entre texto e cor do cartão |
+| `gapX` / `gapY` | `16` | espaçamento entre cartões, em pontos |
 | `textSize` | `9` | corpo do texto |
 | `minTextSize` | `6` | piso ao encolher texto que não coube |
 | `bentoTallFactor` | `1.5` | altura das linhas altas do bento |
-| `bentoPadding` | `12` | respiro entre a borda do bloco e o texto |
+| `bentoPadding` | `16` | respiro entre a borda do cartão e o texto |
 | `fontName` | `""` | `""` usa a fonte padrão; ex.: `"Helvetica"` |
 | `layerName` | `"Color Codes"` | camada de destino, reutilizada a cada execução |
 
-Se algum rótulo ainda encostar na borda, o caminho é `columns: 3` ou
+Se algum rótulo ainda encostar na borda, o caminho é menos `columns` ou
 `showDeltaE: false` — não `minTextSize` menor. Quando `autoWidth` bate no teto
 de `maxSwatchW`, o texto encolhe até `minTextSize` e, a partir daí, transborda
 de propósito: texto ilegível numa legenda de cor é pior que texto apertado.
@@ -89,16 +104,18 @@ O número `dE` ao lado do código é a distância perceptual
 sua cor e aquele Pantone: abaixo de 1 é imperceptível, 2–3 é perceptível lado a
 lado, acima de 10 já é outra cor. É o que sinaliza que a linha é aproximação.
 
-Isso vale inclusive quando a cor já é uma spot color: o nome exato dela sai na
-primeira linha do rótulo, mas as linhas de Pantone abaixo continuam sendo o
-resultado da busca por proximidade, que pode cair em outro código.
+Isso vale inclusive quando a cor já é uma spot color: o nome exato dela sai no
+título do cartão, mas o Pantone do cabeçalho continua sendo o resultado da busca
+por proximidade, que pode cair em outro código.
 
 Três limites que valem entender:
 
 1. **Empates são comuns.** Vários Pantones vizinhos ficam a menos de 1 de ΔE
    entre si. Nos testes, `#E4002B` (que a marca declara como 185 C) tem 199 C,
-   1795 C e 185 C todos entre 1.9 e 2.6 de ΔE. Por isso o padrão lista dois
-   candidatos em vez de fingir que existe uma resposta única.
+   1795 C e 185 C todos entre 1.9 e 2.6 de ΔE. É por isso que o ΔE aparece
+   junto do código, e por isso `pantoneCount: 2` existe: ele acrescenta o
+   segundo colocado como linha do cartão, útil quando a escolha vai para
+   produção.
 2. **Tela não é tinta.** A tabela usa a renderização sRGB de cada Pantone. Cor
    impressa depende de papel, tinta e perfil; a amostra física manda.
 3. **A cobertura é Solid Coated.** 1341 cores. Não inclui uncoated, metálicas,

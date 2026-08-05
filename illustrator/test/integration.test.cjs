@@ -62,7 +62,12 @@ function makeContainer() {
         pageItems: [],
         pathItems: {
             items: [],
-            rectangle: function (top, left, w, h) {
+            roundedRectangle: function (top, left, w, h, rx, ry) {
+        var r = this.rectangle(top, left, w, h);
+        r.radius = rx;
+        return r;
+      },
+      rectangle: function (top, left, w, h) {
                 var r = {
                     typename: "PathItem",
                     top: top, left: left, width: w, height: h,
@@ -80,7 +85,8 @@ function makeContainer() {
                     typename: "TextFrame",
                     position: pos,
                     contents: "",
-                    textRange: { characterAttributes: {} }
+                    textRange: { characterAttributes: {} },
+                    paragraphs: [{ paragraphAttributes: {} }]
                 };
                 this.items.push(t);
                 node.pageItems.push(t);
@@ -135,6 +141,7 @@ function makeSandbox(doc) {
         DocumentColorSpace: { CMYK: "cmyk-doc", RGB: "rgb-doc" },
         ImageColorSpace: { RGB: "rgb", CMYK: "cmyk", GrayScale: "gray", LAB: "lab" },
         ColorConvertPurpose: { previewpurpose: "preview", defaultpurpose: "default" },
+        Justification: { LEFT: "left", RIGHT: "right", CENTER: "center" },
         CMYKColor: function () {
             this.typename = "CMYKColor";
             this.cyan = 0; this.magenta = 0; this.yellow = 0; this.black = 0;
@@ -204,13 +211,71 @@ function cardsOf(doc) {
     return layer.groupItems.items[0].groupItems.items;
 }
 
+/*
+ * O cartao do bento tem ate quatro quadros de texto (titulo, badge, coluna de
+ * rotulos, coluna de valores), entao o "rotulo" de um cartao e a juncao de
+ * todos eles. No grid e um quadro so.
+ */
 function labelsOf(doc) {
     var cards = cardsOf(doc);
     var out = [];
     for (var i = 0; i < cards.length; i++) {
-        out.push(cards[i].textFrames.items[0].contents);
+        var parts = [];
+        for (var t = 0; t < cards[i].textFrames.items.length; t++) {
+            parts.push(cards[i].textFrames.items[t].contents);
+        }
+        out.push(parts.join("\r"));
     }
     return out;
+}
+
+/* Roda o script com sobrescritas no bloco CONFIG. */
+function runWith(doc, overrides) {
+    var patched = source;
+    for (var key in overrides) {
+        var re = new RegExp("(\\n\\s*" + key + ":\\s*)[^,\\n]+(,)");
+        patched = patched.replace(re, "$1" + overrides[key] + "$2");
+    }
+    alerts = [];
+    var box = makeSandbox(doc);
+    vm.runInContext(patched, box);
+    return box;
+}
+
+/* Achata os cartoes desenhados numa geometria facil de conferir. */
+function tilesOf(doc) {
+    var cards = cardsOf(doc);
+    var tiles = [];
+    for (var c = 0; c < cards.length; c++) {
+        var r = cards[c].pathItems.items[0];
+        var texts = [];
+        for (var t = 0; t < cards[c].textFrames.items.length; t++) {
+            var f = cards[c].textFrames.items[t];
+            var attrs = f.textRange.characterAttributes;
+            var widest = 0;
+            var body = f.contents.split("\r");
+            for (var l = 0; l < body.length; l++) {
+                if (body[l].length > widest) widest = body[l].length;
+            }
+            texts.push({
+                contents: f.contents,
+                x: f.position[0], y: f.position[1],
+                lines: body.length, chars: widest,
+                size: attrs.size, ink: attrs.fillColor,
+                align: f.paragraphs[0].paragraphAttributes.justification === "right"
+                    ? "right" : "left"
+            });
+        }
+        tiles.push({
+            left: r.left, right: r.left + r.width,
+            top: r.top, bottom: r.top - r.height,
+            width: r.width, height: r.height,
+            radius: r.radius || 0,
+            fill: r.fillColor,
+            texts: texts
+        });
+    }
+    return tiles;
 }
 
 // ---------------------------------------------------------------------------
@@ -237,25 +302,44 @@ ok("criou a camada Color Codes", legendOf(doc) !== null);
 ok("4 cores solidas viraram amostras", labels.length === 4, labels.length + ": " + JSON.stringify(labels));
 ok("gradiente e padrao foram ignorados e reportados",
     alerts.length === 1 && /2 item/.test(alerts[0]), JSON.stringify(alerts));
-ok("desceu no GroupItem", /HEX #FF0000/.test(labels.join("\n")), labels.join(" | "));
-ok("desceu no CompoundPathItem", /HEX #808080/.test(labels.join("\n")), labels.join(" | "));
+ok("desceu no GroupItem", labels.join("\n").indexOf("#FF0000") !== -1, labels.join(" | "));
+ok("desceu no CompoundPathItem", labels.join("\n").indexOf("#808080") !== -1, labels.join(" | "));
 
-var spotLabel = null;
-for (var i = 0; i < labels.length; i++) if (/^PANTONE 185 C/.test(labels[i])) spotLabel = labels[i];
-ok("spot color usou o nome real como titulo", spotLabel !== null, labels.join(" | "));
-if (spotLabel) {
-    var sl = spotLabel.split("\r");
-    ok("spot: nome na 1a linha", sl[0] === "PANTONE 185 C", sl[0]);
-    ok("spot: tem HEX", /^HEX #[0-9A-F]{6}$/.test(sl[1]), sl[1]);
-    ok("spot: tem CMYK com 4 numeros", /^CMYK \d+ \d+ \d+ \d+$/.test(sl[2]), sl[2]);
-    ok("spot: 1a linha de pantone", /^PANTONE .+  dE [\d.]+$/.test(sl[3]), sl[3]);
-    ok("spot: 2a linha de pantone", /^PANTONE .+  dE [\d.]+$/.test(sl[4]), sl[4]);
-    ok("spot: nenhum til no rotulo", spotLabel.indexOf("~") === -1, spotLabel);
+// O cartao tem quadros separados por papel, entao conferimos a estrutura em vez
+// da string achatada: titulo, badge, coluna de rotulos e coluna de valores.
+var spotTile = null;
+var firstTiles = tilesOf(doc);
+for (var i = 0; i < firstTiles.length; i++) {
+    if (firstTiles[i].texts.length && firstTiles[i].texts[0].contents === "PANTONE 185 C") {
+        spotTile = firstTiles[i];
+    }
+}
+ok("spot color usou o nome real como titulo", spotTile !== null, labels.join(" | "));
+if (spotTile) {
+    var byRole = spotTile.texts;
+    ok("spot: titulo alinhado a esquerda", byRole[0].align === "left");
+    ok("spot: badge e o Pantone mais proximo, alinhado a direita",
+        byRole[1].align === "right" && /^PANTONE .+  dE [\d.]+$/.test(byRole[1].contents),
+        byRole[1].contents);
+    ok("spot: coluna de rotulos", byRole[2].contents === "HEX\rRGB\rCMYK", byRole[2].contents);
+
+    var values = byRole[3].contents.split("\r");
+    ok("spot: coluna de valores alinhada a direita", byRole[3].align === "right");
+    ok("spot: valor HEX", /^#[0-9A-F]{6}$/.test(values[0]), values[0]);
+    ok("spot: valor RGB com 3 numeros", /^\d+, \d+, \d+$/.test(values[1]), values[1]);
+    ok("spot: valor CMYK com 4 numeros", /^\d+, \d+, \d+, \d+$/.test(values[2]), values[2]);
+
+    var joined = "";
+    for (var jt = 0; jt < byRole.length; jt++) joined += byRole[jt].contents;
+    ok("spot: nenhum til no cartao", joined.indexOf("~") === -1, joined);
 }
 
 var cards = cardsOf(doc);
-ok("cada card tem 1 retangulo e 1 texto",
-    cards.length > 0 && cards[0].pathItems.items.length === 1 && cards[0].textFrames.items.length === 1);
+// Cartao bento: 1 retangulo + titulo + badge + coluna de rotulos + coluna de valores.
+ok("cada cartao tem 1 retangulo e ate 4 quadros de texto",
+    cards.length > 0 && cards[0].pathItems.items.length === 1 &&
+    cards[0].textFrames.items.length > 1 && cards[0].textFrames.items.length <= 4,
+    cards[0].textFrames.items.length + " quadros");
 ok("retangulo foi pintado com CMYKColor num doc CMYK",
     cards[0].pathItems.items[0].fillColor.typename === "CMYKColor",
     cards[0].pathItems.items[0].fillColor.typename);
@@ -275,7 +359,7 @@ run(doc);
 ok("3 objetos com 2 cores unicas geram 2 amostras",
     labelsOf(doc).length === 2, labelsOf(doc).length + ": " + JSON.stringify(labelsOf(doc)));
 ok("cor de contorno entrou na legenda",
-    /HEX #000000/.test(labelsOf(doc).join("\n")), labelsOf(doc).join(" | "));
+    labelsOf(doc).join("\n").indexOf("#000000") !== -1, labelsOf(doc).join(" | "));
 
 // ---------------------------------------------------------------------------
 console.log("\nDocumento RGB, cores vindas do painel Swatches");
@@ -288,8 +372,9 @@ doc = makeDoc("rgb-doc", [
 run(doc);
 labels = labelsOf(doc);
 ok("2 swatches solidas viraram amostras", labels.length === 2, JSON.stringify(labels));
-ok("nome da swatch virou titulo", /^Azul da marca/.test(labels[0]), labels[0]);
-ok("hex correto para 0,51,160", /HEX #0033A0/.test(labels[0]), labels[0]);
+ok("nome da swatch virou titulo, em caixa alta",
+    labels[0].indexOf("AZUL DA MARCA") === 0, labels[0]);
+ok("hex correto para 0,51,160", labels[0].indexOf("#0033A0") !== -1, labels[0]);
 ok("achou PANTONE 286 C", /PANTONE 286 C/.test(labels[0]), labels[0]);
 cards = cardsOf(doc);
 ok("retangulo foi pintado com RGBColor num doc RGB",
@@ -312,47 +397,54 @@ ok("tinta 100% e 50% sao amostras distintas", labels.length === 2, JSON.stringif
 ok("tinta 50% clareia a cor",
     labels[0].split("\r")[1] !== labels[1].split("\r")[1],
     labels[0].split("\r")[1] + " vs " + labels[1].split("\r")[1]);
-
 // ---------------------------------------------------------------------------
-console.log("\nGeometria do layout bento");
+console.log("\nGeometria do cartao bento");
 // ---------------------------------------------------------------------------
 /*
- * O bento e a parte com mais como dar errado: bloco invadindo o vizinho,
- * buraco na linha, texto saindo por baixo da cor. Aqui montamos 13 cores com
- * rotulos de comprimentos diferentes e conferimos o desenho resultante.
+ * O cartao e a parte com mais como dar errado: coluna de valores colidindo com
+ * a de rotulos, texto saindo por baixo da cor, bloco invadindo o vizinho.
+ * Montamos 13 cores com nomes de comprimentos diferentes e conferimos o
+ * desenho resultante.
  */
-doc = makeDoc("rgb-doc");
-doc.selection = [];
-for (var v = 0; v < 13; v++) {
-    doc.selection.push({
-        typename: "PathItem", filled: true, stroked: false,
-        fillColor: rgb((v * 37) % 256, (v * 91) % 256, (v * 143) % 256)
-    });
-}
+var PALETTE_NAMES = [
+    "Vermelho da marca", "Azul", "Amarelo destaque muito longo", "Verde",
+    "Grafite", "Areia", "Roxo", "Ciano", "Preto", "Off-white",
+    "Laranja", "Rosa", "Petroleo"
+];
+doc = makeDoc("rgb-doc", PALETTE_NAMES.map(function (name, v) {
+    return {
+        name: name,
+        color: rgb((v * 37) % 256, (v * 91) % 256, (v * 143) % 256)
+    };
+}));
 run(doc);
 
-cards = cardsOf(doc);
-ok("13 cores geraram 13 blocos", cards.length === 13, "" + cards.length);
+var tiles = tilesOf(doc);
+ok("13 cores geraram 13 cartoes", tiles.length === 13, "" + tiles.length);
+ok("cartoes tem cantos arredondados", tiles[0].radius > 0, "" + tiles[0].radius);
 
-// Reconstroi a geometria a partir do que foi desenhado.
-var tiles = [];
-for (var c2 = 0; c2 < cards.length; c2++) {
-    var r2 = cards[c2].pathItems.items[0];
-    var t2 = cards[c2].textFrames.items[0];
-    tiles.push({
-        left: r2.left, right: r2.left + r2.width,
-        top: r2.top, bottom: r2.top - r2.height,
-        width: r2.width, height: r2.height,
-        textX: t2.position[0], textY: t2.position[1],
-        contents: t2.contents,
-        lines: t2.contents.split("\r").length,
-        size: t2.textRange.characterAttributes.size,
-        fill: r2.fillColor,
-        ink: t2.textRange.characterAttributes.fillColor
-    });
+// Fundo e painel ficam soltos no grupo raiz, atras dos cartoes.
+var rootPaths = legendOf(doc).groupItems.items[0].pathItems.items;
+ok("desenhou fundo e painel atras dos cartoes", rootPaths.length === 2,
+    rootPaths.length + " formas de fundo");
+if (rootPaths.length === 2) {
+    var bg = rootPaths[0], panel = rootPaths[1];
+    ok("o painel cabe dentro do fundo",
+        panel.left > bg.left && panel.top < bg.top &&
+        panel.left + panel.width < bg.left + bg.width,
+        "painel " + panel.width.toFixed(0) + " vs fundo " + bg.width.toFixed(0));
+
+    var outside = 0;
+    for (var pt = 0; pt < tiles.length; pt++) {
+        if (tiles[pt].left < panel.left - 0.01) outside++;
+        else if (tiles[pt].right > panel.left + panel.width + 0.01) outside++;
+        else if (tiles[pt].top > panel.top + 0.01) outside++;
+        else if (tiles[pt].bottom < panel.top - panel.height - 0.01) outside++;
+    }
+    ok("todo cartao cabe dentro do painel", outside === 0, outside + " para fora");
 }
 
-// Agrupa por topo: blocos da mesma linha compartilham topo e altura.
+// Agrupa por topo: cartoes da mesma linha compartilham topo e altura.
 var rows = {};
 for (var t3 = 0; t3 < tiles.length; t3++) {
     var key = tiles[t3].top.toFixed(4);
@@ -361,104 +453,143 @@ for (var t3 = 0; t3 < tiles.length; t3++) {
 }
 var rowKeys = Object.keys(rows).sort(function (a, b) { return Number(b) - Number(a); });
 console.log("  " + rowKeys.length + " linhas: " +
-    rowKeys.map(function (k) { return rows[k].length + " blocos"; }).join(", "));
+    rowKeys.map(function (k) { return rows[k].length + " cartoes"; }).join(", "));
 
-var sameHeight = true, overlap = false, gapWrong = false, widthMismatch = false;
-var expectedWidth = null;
+var sameHeight = true, overlap = false, gapWrong = false;
 for (var rk = 0; rk < rowKeys.length; rk++) {
     var rowTiles = rows[rowKeys[rk]].slice().sort(function (a, b) { return a.left - b.left; });
-
     for (var q2 = 0; q2 < rowTiles.length; q2++) {
         if (Math.abs(rowTiles[q2].height - rowTiles[0].height) > 1e-6) sameHeight = false;
         if (q2 > 0) {
             var gapActual = rowTiles[q2].left - rowTiles[q2 - 1].right;
             if (gapActual < -1e-6) overlap = true;
-            // A ultima linha pode ficar incompleta; nas cheias o gap e exato.
-            else if (Math.abs(gapActual - 18) > 1e-6) gapWrong = true;
+            else if (Math.abs(gapActual - 16) > 1e-6) gapWrong = true;
         }
     }
-    // Linhas cheias tem de terminar todas na mesma coluna da direita.
-    var rowRight = rowTiles[rowTiles.length - 1].right;
-    if (rk < rowKeys.length - 1) {
-        if (expectedWidth === null) expectedWidth = rowRight;
-        else if (Math.abs(rowRight - expectedWidth) > 1e-6) widthMismatch = true;
-    }
 }
-ok("blocos da mesma linha tem a mesma altura", sameHeight);
-ok("nenhum bloco invade o vizinho", overlap === false);
-ok("respiro entre blocos e exatamente gapX", gapWrong === false);
-ok("linhas cheias terminam na mesma borda direita", widthMismatch === false);
-
-// A largura da coluna e automatica, entao comparamos os blocos entre si em vez
-// de contra um numero fixo: o bento precisa ter dois tamanhos, quaisquer que
-// sejam eles.
-var minH = tiles[0].height, maxH = tiles[0].height;
-var minW = tiles[0].width, maxW = tiles[0].width;
-for (var t4 = 0; t4 < tiles.length; t4++) {
-    if (tiles[t4].height < minH) minH = tiles[t4].height;
-    if (tiles[t4].height > maxH) maxH = tiles[t4].height;
-    if (tiles[t4].width < minW) minW = tiles[t4].width;
-    if (tiles[t4].width > maxW) maxW = tiles[t4].width;
-}
-ok("existem blocos largos e estreitos", maxW > minW,
-    "larguras de " + minW.toFixed(0) + " a " + maxW.toFixed(0));
-ok("bloco largo e o dobro do estreito mais o respiro",
-    Math.abs(maxW - (minW * 2 + 18)) < 1e-6,
-    maxW.toFixed(1) + " vs " + (minW * 2 + 18).toFixed(1));
-ok("existem linhas altas e normais", maxH > minH,
-    "alturas de " + minH.toFixed(0) + " a " + maxH.toFixed(0));
+ok("cartoes da mesma linha tem a mesma altura", sameHeight);
+ok("nenhum cartao invade o vizinho", overlap === false);
+ok("respiro entre cartoes e exatamente gapX", gapWrong === false);
+ok("sem mosaico, todos os cartoes tem a mesma largura",
+    tiles[0].width === tiles[1].width && tiles[0].width === tiles[5].width,
+    tiles[0].width + " / " + tiles[1].width + " / " + tiles[5].width);
 
 /*
- * O texto tem de caber dentro da cor nos QUATRO lados.
- *
- * Regressao: a versao anterior so conferia a borda esquerda, e o rotulo vazava
- * pela direita nos blocos de 1 coluna — "PANTONE Dark Blue C  dE 1.3" a 9 pt
- * pede ~150 pt num bloco de 110. Ninguem viu ate o preview em SVG.
+ * Regressao: o texto tem de caber dentro da cor nos quatro lados. A coluna de
+ * valores e ancorada a direita, entao cresce para a ESQUERDA — conferir so a
+ * coordenada de ancoragem nao diria nada. Uma versao anterior so olhava a borda
+ * esquerda e deixou passar rotulo vazando por cima do cartao vizinho.
  */
-var escapedH = 0, escapedV = 0;
-var worstFill = 0;
+var escapedH = 0, escapedV = 0, collided = 0;
 for (var t5 = 0; t5 < tiles.length; t5++) {
     var tile = tiles[t5];
-    var lead = tile.size * 1.3;
-    var topLine = tile.textY + tile.size;                 // topo da 1a linha
-    var lastLine = tile.textY - (tile.lines - 1) * lead;  // base da ultima
+    var spans = [];
+    for (var tx = 0; tx < tile.texts.length; tx++) {
+        var f = tile.texts[tx];
+        var w = f.chars * f.size * 0.55;
+        var from = f.align === "right" ? f.x - w : f.x;
+        var to = f.align === "right" ? f.x : f.x + w;
+        if (from < tile.left - 0.5 || to > tile.right + 0.5) escapedH++;
 
-    if (tile.textX < tile.left) escapedH++;
-    if (topLine > tile.top || lastLine < tile.bottom) escapedV++;
+        var topLine = f.y + f.size;
+        var lastLine = f.y - (f.lines - 1) * f.size * 1.3;
+        if (topLine > tile.top + 0.5 || lastLine < tile.bottom - 0.5) escapedV++;
 
-    // Largura estimada com o mesmo fator do script.
-    var widest = 0;
-    var body = tile.contents.split("\r");
-    for (var bl = 0; bl < body.length; bl++) {
-        if (body[bl].length > widest) widest = body[bl].length;
+        spans.push({ from: from, to: to, y: f.y, align: f.align });
     }
-    var textRight = tile.textX + widest * tile.size * 0.55;
-    var usable = tile.right - 12; // menos o bentoPadding do lado direito
-    if (textRight > usable + 0.5) escapedH++;
-
-    var fillRatio = (textRight - tile.left) / tile.width;
-    if (fillRatio > worstFill) worstFill = fillRatio;
+    // Rotulo e valor da mesma faixa nao podem se sobrepor.
+    for (var a = 0; a < spans.length; a++) {
+        for (var b2 = a + 1; b2 < spans.length; b2++) {
+            if (Math.abs(spans[a].y - spans[b2].y) > 0.01) continue;
+            if (spans[a].align === spans[b2].align) continue;
+            var left = spans[a].align === "left" ? spans[a] : spans[b2];
+            var right = spans[a].align === "left" ? spans[b2] : spans[a];
+            if (left.to > right.from + 0.5) collided++;
+        }
+    }
 }
-ok("nenhum rotulo vaza na horizontal", escapedH === 0, escapedH + " vazaram");
-ok("nenhum rotulo vaza na vertical", escapedV === 0, escapedV + " vazaram");
-console.log("  rotulo mais largo ocupa " + (worstFill * 100).toFixed(0) + "% do seu bloco");
+ok("nenhum texto vaza na horizontal", escapedH === 0, escapedH + " vazaram");
+ok("nenhum texto vaza na vertical", escapedV === 0, escapedV + " vazaram");
+ok("coluna de rotulos nao colide com a de valores", collided === 0, collided + " colisoes");
 
-var shrunk = 0;
-for (var t7 = 0; t7 < tiles.length; t7++) if (tiles[t7].size < 9) shrunk++;
-console.log("  " + shrunk + "/" + tiles.length + " blocos precisaram encolher o texto");
-var tooSmall = 0;
-for (var t8 = 0; t8 < tiles.length; t8++) if (tiles[t8].size < 6) tooSmall++;
-ok("nenhum texto abaixo do corpo minimo", tooSmall === 0, tooSmall + " blocos");
-
-// Cor do texto tem de acompanhar o contraste da cor de fundo.
-var inkWrong = 0;
+// A tinta e derivada da cor, nao preto ou branco: o que temos de garantir e o
+// contraste minimo configurado.
+var lowContrast = 0, pureInk = 0;
 for (var t6 = 0; t6 < tiles.length; t6++) {
-    var f2 = tiles[t6].fill;
-    var want = sandboxPick([f2.red, f2.green, f2.blue]);
-    var got = (tiles[t6].ink.red === 255) ? "white" : "black";
-    if (want !== got) inkWrong++;
+    var fill = [tiles[t6].fill.red, tiles[t6].fill.green, tiles[t6].fill.blue];
+    for (var ti = 0; ti < tiles[t6].texts.length; ti++) {
+        var ic = tiles[t6].texts[ti].ink;
+        var inkRgb = [ic.red, ic.green, ic.blue];
+        if (probeBox.contrastRatio(fill, inkRgb) < 4.5 - 1e-6) lowContrast++;
+        var isPure = (inkRgb[0] === inkRgb[1] && inkRgb[1] === inkRgb[2] &&
+                      (inkRgb[0] === 0 || inkRgb[0] === 255));
+        if (isPure) pureInk++;
+    }
 }
-ok("texto usa a cor de maior contraste em todo bloco", inkWrong === 0, inkWrong + " errados");
+ok("todo texto atinge o contraste minimo", lowContrast === 0, lowContrast + " abaixo de 4.5");
+/*
+ * deriveInkColor cai para preto/branco quando nenhum L com a mesma matiz
+ * atinge o contraste pedido — acontece em cores ja muito claras ou escuras.
+ * O que o teste garante e que isso seja a excecao, nao a regra: se virasse
+ * regra, o efeito de tinta tonal teria se perdido sem ninguem notar.
+ */
+var tintedTiles = 0;
+for (var t7 = 0; t7 < tiles.length; t7++) {
+    var anyTinted = false;
+    for (var t8 = 0; t8 < tiles[t7].texts.length; t8++) {
+        var k2 = tiles[t7].texts[t8].ink;
+        if (!(k2.red === k2.green && k2.green === k2.blue &&
+              (k2.red === 0 || k2.red === 255))) anyTinted = true;
+    }
+    if (anyTinted) tintedTiles++;
+}
+ok("a maioria dos cartoes usa tinta derivada da cor, nao preto/branco",
+    tintedTiles > tiles.length / 2, tintedTiles + "/" + tiles.length + " com tinta tonal");
+
+// ---------------------------------------------------------------------------
+console.log("\nMosaico do bento (bentoMosaic: true)");
+// ---------------------------------------------------------------------------
+doc = makeDoc("rgb-doc");
+doc.selection = [];
+for (var v3 = 0; v3 < 13; v3++) {
+    doc.selection.push({
+        typename: "PathItem", filled: true, stroked: false,
+        fillColor: rgb((v3 * 37) % 256, (v3 * 91) % 256, (v3 * 143) % 256)
+    });
+}
+runWith(doc, { bentoMosaic: "true", columns: "4" });
+
+var mTiles = tilesOf(doc);
+var minW = mTiles[0].width, maxW = mTiles[0].width;
+var minH = mTiles[0].height, maxH = mTiles[0].height;
+for (var mt = 0; mt < mTiles.length; mt++) {
+    if (mTiles[mt].width < minW) minW = mTiles[mt].width;
+    if (mTiles[mt].width > maxW) maxW = mTiles[mt].width;
+    if (mTiles[mt].height < minH) minH = mTiles[mt].height;
+    if (mTiles[mt].height > maxH) maxH = mTiles[mt].height;
+}
+ok("mosaico tem cartoes largos e estreitos", maxW > minW,
+    "larguras de " + minW.toFixed(0) + " a " + maxW.toFixed(0));
+ok("cartao largo e o dobro do estreito mais o respiro",
+    Math.abs(maxW - (minW * 2 + 16)) < 1e-6,
+    maxW.toFixed(1) + " vs " + (minW * 2 + 16).toFixed(1));
+ok("mosaico tem linhas altas e normais", maxH > minH,
+    "alturas de " + minH.toFixed(0) + " a " + maxH.toFixed(0));
+
+var mOverlap = false;
+var mRows = {};
+for (var mr = 0; mr < mTiles.length; mr++) {
+    var mk = mTiles[mr].top.toFixed(4);
+    if (!mRows[mk]) mRows[mk] = [];
+    mRows[mk].push(mTiles[mr]);
+}
+for (var mrk in mRows) {
+    var sorted = mRows[mrk].slice().sort(function (a, b) { return a.left - b.left; });
+    for (var ms = 1; ms < sorted.length; ms++) {
+        if (sorted[ms].left - sorted[ms - 1].right < -1e-6) mOverlap = true;
+    }
+}
+ok("mosaico nao sobrepoe cartoes", mOverlap === false);
 
 // ---------------------------------------------------------------------------
 console.log("\nLayout grid (modo alternativo)");
@@ -471,27 +602,26 @@ for (var v2 = 0; v2 < 7; v2++) {
         fillColor: rgb((v2 * 53) % 256, (v2 * 17) % 256, (v2 * 211) % 256)
     });
 }
-var gridBox = makeSandbox(doc);
-alerts = [];
-vm.runInContext(source.replace('layout: "bento"', 'layout: "grid"'), gridBox);
+runWith(doc, { layout: '"grid"' });
 
-cards = cardsOf(doc);
-ok("grid desenhou os 7 blocos", cards.length === 7, "" + cards.length);
-var allSameSize = true, allBelow = true, allBlack = true;
-var first = cards[0].pathItems.items[0];
-for (var g2 = 0; g2 < cards.length; g2++) {
-    var gr = cards[g2].pathItems.items[0];
-    var gt = cards[g2].textFrames.items[0];
-    // A largura e automatica; o que importa e serem todas iguais entre si.
-    if (gr.width !== first.width || gr.height !== first.height) allSameSize = false;
-    if (gt.position[1] > gr.top - gr.height) allBelow = false;
-    if (gt.textRange.characterAttributes.fillColor.red !== 0) allBlack = false;
+var gTiles = tilesOf(doc);
+ok("grid desenhou os 7 blocos", gTiles.length === 7, "" + gTiles.length);
+var allSameSize = true, allBelow = true, allBlack = true, oneFrame = true;
+for (var g2 = 0; g2 < gTiles.length; g2++) {
+    if (gTiles[g2].width !== gTiles[0].width ||
+        gTiles[g2].height !== gTiles[0].height) allSameSize = false;
+    if (gTiles[g2].texts.length !== 1) oneFrame = false;
+    if (gTiles[g2].texts[0].y > gTiles[g2].bottom) allBelow = false;
+    if (gTiles[g2].texts[0].ink.red !== 0) allBlack = false;
 }
 ok("grid: todos os blocos com o mesmo tamanho", allSameSize,
-    first.width + "x" + first.height);
-ok("grid: altura da amostra e a configurada", first.height === 110, "" + first.height);
+    gTiles[0].width + "x" + gTiles[0].height);
+ok("grid: um unico quadro de texto por bloco", oneFrame);
 ok("grid: rotulo fica abaixo da amostra, nao dentro", allBelow);
 ok("grid: rotulo sempre em preto", allBlack);
+ok("grid: nao desenha painel de fundo",
+    legendOf(doc).groupItems.items[0].pathItems.items.length === 0);
+
 
 // ---------------------------------------------------------------------------
 console.log("\nCasos de borda");

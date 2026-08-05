@@ -43,6 +43,11 @@ function makeContainer() {
     typename: "GroupItem", name: "", pageItems: [],
     pathItems: {
       items: [],
+      roundedRectangle: function (top, left, w, h, rx, ry) {
+        var r = this.rectangle(top, left, w, h);
+        r.radius = rx;
+        return r;
+      },
       rectangle: function (top, left, w, h) {
         var r = { top: top, left: left, width: w, height: h, filled: false, stroked: false, fillColor: null };
         this.items.push(r); node.pageItems.push(r); return r;
@@ -51,7 +56,8 @@ function makeContainer() {
     textFrames: {
       items: [],
       pointText: function (pos) {
-        var t = { position: pos, contents: "", textRange: { characterAttributes: {} } };
+        var t = { position: pos, contents: "", textRange: { characterAttributes: {} },
+                    paragraphs: [{ paragraphAttributes: {} }] };
         this.items.push(t); node.pageItems.push(t); return t;
       }
     },
@@ -91,6 +97,7 @@ var box = {
   DocumentColorSpace: { CMYK: "cmyk-doc", RGB: "rgb-doc" },
   ImageColorSpace: { RGB: "rgb", CMYK: "cmyk", GrayScale: "gray", LAB: "lab" },
   ColorConvertPurpose: { previewpurpose: "preview", defaultpurpose: "default" },
+        Justification: { LEFT: "left", RIGHT: "right", CENTER: "center" },
   CMYKColor: function () { this.typename = "CMYKColor"; },
   RGBColor: function () { this.typename = "RGBColor"; this.red = 0; this.green = 0; this.blue = 0; },
   GrayColor: function () { this.typename = "GrayColor"; this.gray = 0; },
@@ -116,22 +123,38 @@ vm.runInContext(source, box);
 
 var legend = null;
 for (var i = 0; i < layers.length; i++) if (layers[i].name === "Color Codes") legend = layers[i];
-var cards = legend.groupItems.items[0].groupItems.items;
+var root = legend.groupItems.items[0];
 
-var shapes = [];
+// Fundo e painel ficam soltos no grupo raiz; cada cartao e um subgrupo.
+var backdrops = root.pathItems.items;
+var cards = root.groupItems.items;
+
+var rects = [];
+var texts = [];
 var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
 
-for (var c = 0; c < cards.length; c++) {
-  var rect = cards[c].pathItems.items[0];
-  var text = cards[c].textFrames.items[0];
-  shapes.push({ rect: rect, text: text });
-  if (rect.left < minX) minX = rect.left;
-  if (rect.left + rect.width > maxX) maxX = rect.left + rect.width;
-  if (rect.top - rect.height < minY) minY = rect.top - rect.height;
-  if (rect.top > maxY) maxY = rect.top;
+function noteBounds(r) {
+  if (r.left < minX) minX = r.left;
+  if (r.left + r.width > maxX) maxX = r.left + r.width;
+  if (r.top - r.height < minY) minY = r.top - r.height;
+  if (r.top > maxY) maxY = r.top;
 }
 
-var pad = 24;
+for (var b = 0; b < backdrops.length; b++) {
+  rects.push(backdrops[b]);
+  noteBounds(backdrops[b]);
+}
+for (var c = 0; c < cards.length; c++) {
+  for (var p = 0; p < cards[c].pathItems.items.length; p++) {
+    rects.push(cards[c].pathItems.items[p]);
+    noteBounds(cards[c].pathItems.items[p]);
+  }
+  for (var q = 0; q < cards[c].textFrames.items.length; q++) {
+    texts.push(cards[c].textFrames.items[q]);
+  }
+}
+
+var pad = 8;
 var W = (maxX - minX) + pad * 2;
 var H = (maxY - minY) + pad * 2;
 // Illustrator cresce para cima; SVG para baixo.
@@ -141,34 +164,40 @@ function sy(y) { return (maxY - y + pad).toFixed(2); }
 function esc(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
+function css(color) {
+  return "rgb(" + Math.round(color.red) + "," + Math.round(color.green) +
+         "," + Math.round(color.blue) + ")";
+}
 
 var out = [];
 out.push('<svg xmlns="http://www.w3.org/2000/svg" width="' + W.toFixed(0) + '" height="' +
          H.toFixed(0) + '" viewBox="0 0 ' + W.toFixed(2) + ' ' + H.toFixed(2) + '">');
 out.push('<rect width="100%" height="100%" fill="#ffffff"/>');
 
-for (var s = 0; s < shapes.length; s++) {
-  var r = shapes[s].rect;
-  var t = shapes[s].text;
-  var fill = "rgb(" + Math.round(r.fillColor.red) + "," + Math.round(r.fillColor.green) +
-             "," + Math.round(r.fillColor.blue) + ")";
+for (var s = 0; s < rects.length; s++) {
+  var r = rects[s];
   out.push('<rect x="' + sx(r.left) + '" y="' + sy(r.top) + '" width="' + r.width.toFixed(2) +
-           '" height="' + r.height.toFixed(2) + '" fill="' + fill + '"/>');
+           '" height="' + r.height.toFixed(2) +
+           '" rx="' + (r.radius || 0) + '" fill="' + css(r.fillColor) + '"/>');
+}
 
-  var ink = t.textRange.characterAttributes.fillColor;
-  var inkCss = (ink && ink.red === 255) ? "#ffffff" : "#000000";
-  var size = t.textRange.characterAttributes.size || 9;
-  var leading = t.textRange.characterAttributes.leading || size * 1.3;
+for (var t = 0; t < texts.length; t++) {
+  var frame = texts[t];
+  var attrs = frame.textRange.characterAttributes;
+  var size = attrs.size || 9;
+  var leading = attrs.leading || size * 1.3;
+  var anchor = frame.paragraphs[0].paragraphAttributes.justification === "right" ? "end" : "start";
 
-  var body = t.contents.split("\r");
+  var body = frame.contents.split("\r");
   for (var l = 0; l < body.length; l++) {
-    out.push('<text x="' + sx(t.position[0]) + '" y="' + sy(t.position[1] - l * leading) +
+    out.push('<text x="' + sx(frame.position[0]) + '" y="' + sy(frame.position[1] - l * leading) +
+             '" text-anchor="' + anchor +
              '" font-family="Helvetica, Arial, sans-serif" font-size="' + size +
-             '" fill="' + inkCss + '">' + esc(body[l]) + '</text>');
+             '" fill="' + css(attrs.fillColor) + '">' + esc(body[l]) + '</text>');
   }
 }
 out.push("</svg>");
 
 fs.writeFileSync(outPath, out.join("\n"), "utf8");
-console.log(layout + ": " + shapes.length + " blocos -> " + path.relative(process.cwd(), outPath) +
+console.log(layout + ": " + cards.length + " cartoes -> " + path.relative(process.cwd(), outPath) +
             "  (" + W.toFixed(0) + "x" + H.toFixed(0) + ")");
