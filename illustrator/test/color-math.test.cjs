@@ -495,6 +495,118 @@ noPantone.pantone = null;
 ok("pantone nulo nao quebra", sandbox.buildCard(noPantone, cfg).rows.length === 3);
 
 // ---------------------------------------------------------------------------
+console.log("\nparseColorInput - lista colada pelo usuario");
+// ---------------------------------------------------------------------------
+var parsed = sandbox.parseColorInput(
+    "Principais\n" +
+    "Rosa: 255, 153, 255\n" +
+    "Amarelo: #F8F852\n" +
+    "\n" +
+    "Secundarias\n" +
+    "Bege - 255, 217, 218\n" +
+    "Ouro   FFDD17\n"
+);
+ok("dois grupos", parsed.groups.length === 2,
+    parsed.groups.length + ": " + JSON.stringify(parsed.groups));
+ok("sem erros", parsed.errors.length === 0, JSON.stringify(parsed.errors));
+ok("nome do 1o grupo", parsed.groups[0].name === "Principais", parsed.groups[0].name);
+ok("nome do 2o grupo", parsed.groups[1].name === "Secundarias", parsed.groups[1].name);
+ok("2 cores no 1o grupo", parsed.groups[0].colors.length === 2);
+ok("2 cores no 2o grupo", parsed.groups[1].colors.length === 2);
+ok("RGB por virgula", parsed.groups[0].colors[0].name === "Rosa" &&
+    parsed.groups[0].colors[0].rgb.join(",") === "255,153,255",
+    JSON.stringify(parsed.groups[0].colors[0]));
+ok("hex com #", parsed.groups[0].colors[1].name === "Amarelo" &&
+    sandbox.toHex(parsed.groups[0].colors[1].rgb) === "#F8F852",
+    JSON.stringify(parsed.groups[0].colors[1]));
+ok("separador travessao no nome", parsed.groups[1].colors[0].name === "Bege",
+    parsed.groups[1].colors[0].name);
+ok("hex sem # no fim da linha", parsed.groups[1].colors[1].name === "Ouro" &&
+    sandbox.toHex(parsed.groups[1].colors[1].rgb) === "#FFDD17",
+    JSON.stringify(parsed.groups[1].colors[1]));
+
+// Formatos alternativos.
+var formats = sandbox.parseColorInput(
+    "#F9F\n" +
+    "rgb(0, 51, 160)\n" +
+    "0 177 64\n" +
+    "CMYK da capa: 0, 40, 0, 0\n" +
+    "- Laranja: #FF6900\n" +
+    "* Rosa | 214, 37, 152\n"
+);
+var flat = formats.groups[0].colors;
+ok("hex de 3 digitos expande (F9F -> FF99FF)",
+    sandbox.toHex(flat[0].rgb) === "#FF99FF", sandbox.toHex(flat[0].rgb));
+ok("rgb() com parenteses", flat[1].rgb.join(",") === "0,51,160", JSON.stringify(flat[1]));
+ok("tres numeros separados por espaco", flat[2].rgb.join(",") === "0,177,64",
+    JSON.stringify(flat[2]));
+ok("quatro numeros viram CMYK",
+    flat[3].cmyk && flat[3].cmyk.join(",") === "0,40,0,0" && !flat[3].rgb,
+    JSON.stringify(flat[3]));
+ok("marcador de lista com hifen e removido", flat[4].name === "Laranja", flat[4].name);
+ok("marcador com asterisco e separador barra", flat[5].name === "Rosa", flat[5].name);
+
+// Sem titulo de grupo, tudo cai numa secao unica sem nome.
+var noGroup = sandbox.parseColorInput("#FF0000\n#00FF00\n");
+ok("sem titulo, um grupo unico sem nome",
+    noGroup.groups.length === 1 && noGroup.groups[0].name === "" &&
+    noGroup.groups[0].colors.length === 2, JSON.stringify(noGroup.groups));
+
+/*
+ * O caso que faz um parser ingenuo errar: linha com numero que NAO e cor.
+ * "Cores 2024" tem um numero, "Grid 3 x 3" tem dois — nenhuma das duas e cor,
+ * as duas sao titulo de grupo. So 3 numeros (RGB) ou 4 (CMYK) contam.
+ */
+var tricky = sandbox.parseColorInput(
+    "Cores 2024\n" +
+    "#FF0000\n" +
+    "Grid 3 x 3\n" +
+    "#00FF00\n"
+);
+ok("linha com 1 numero e titulo, nao cor",
+    tricky.groups[0].name === "Cores 2024", tricky.groups[0].name);
+ok("linha com 2 numeros e titulo, nao cor",
+    tricky.groups[1].name === "Grid 3 x 3", tricky.groups[1].name);
+ok("os dois grupos ficaram com 1 cor cada",
+    tricky.groups.length === 2 &&
+    tricky.groups[0].colors.length === 1 && tricky.groups[1].colors.length === 1);
+
+// Hex sem # so vale como token isolado no fim: uma palavra que por acaso so
+// tenha letras de A a F nao pode virar cor no meio de um titulo.
+var wordy = sandbox.parseColorInput("Fachada decafe azul\n#FF0000\n");
+ok("palavra hexadecimal no meio da linha nao vira cor",
+    wordy.groups.length === 1 && wordy.groups[0].name === "Fachada decafe azul",
+    JSON.stringify(wordy.groups));
+
+// Enfeites de titulo.
+var decorated = sandbox.parseColorInput("## Principais ##\n#FF0000\n-- Secundarias --\n#00FF00\n");
+ok("tira # do titulo", decorated.groups[0].name === "Principais", decorated.groups[0].name);
+ok("tira travessoes do titulo", decorated.groups[1].name === "Secundarias",
+    decorated.groups[1].name);
+
+// Erros de faixa sao reportados, nao engolidos nem fatais.
+var bad = sandbox.parseColorInput("Boa: #FF0000\nRuim: 300, 10, 10\nOutra: 0, 0, 0, 200\n");
+ok("valores fora de faixa viram erro", bad.errors.length === 2, JSON.stringify(bad.errors));
+ok("a linha boa continua valendo",
+    bad.groups.length === 1 && bad.groups[0].colors.length === 1);
+ok("o erro diz o numero da linha", /linha 2/.test(bad.errors[0]), bad.errors[0]);
+
+// Grupo declarado e nunca preenchido nao pode virar titulo solto.
+var empty = sandbox.parseColorInput("Principais\n#FF0000\nSecundarias\n");
+ok("grupo sem cor nenhuma e descartado",
+    empty.groups.length === 1 && empty.groups[0].name === "Principais",
+    JSON.stringify(empty.groups));
+
+ok("entrada vazia devolve nada", sandbox.parseColorInput("").groups.length === 0);
+ok("so espacos devolve nada", sandbox.parseColorInput("   \n\n  \n").groups.length === 0);
+ok("aceita quebra de linha do Windows",
+    sandbox.parseColorInput("A\r\n#FF0000\r\n").groups[0].name === "A");
+ok("aceita quebra de linha antiga do Mac",
+    sandbox.parseColorInput("A\r#FF0000\r").groups[0].name === "A");
+ok("cor sem nome fica sem nome",
+    sandbox.parseColorInput("#FF0000").groups[0].colors[0].name === "");
+
+// ---------------------------------------------------------------------------
 console.log("\ncardTextChars - largura em colunas opostas");
 // ---------------------------------------------------------------------------
 /*

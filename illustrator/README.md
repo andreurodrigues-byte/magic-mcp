@@ -23,6 +23,8 @@ Dois layouts, via `CONFIG.layout`:
   alturas variadas, como um bento de verdade.
 - **`"grid"`** — grade simples, amostra em cima e rótulo em texto corrido abaixo.
 
+Os grupos valem nos dois: cada um começa numa linha nova, com o título acima.
+
 Dois detalhes que fazem o cartão funcionar:
 
 - **A cor do texto é derivada da própria cor**, não preto ou branco chapado:
@@ -46,7 +48,42 @@ reinicie o programa:
 - **macOS** — `/Applications/Adobe Illustrator <versão>/Presets/en_US/Scripts/`
 - **Windows** — `C:\Program Files\Adobe\Adobe Illustrator <versão>\Presets\en_US\Scripts\`
 
-O script decide sozinho de onde tirar as cores:
+### Colando os códigos (padrão)
+
+Ao rodar, abre uma caixa. Cole a lista, um código por linha:
+
+```
+Principais
+Rosa: 255, 153, 255
+Amarelo: #F8F852
+Copas: #851057
+
+Secundárias
+Bege: 255, 217, 218
+Ouro: #FFDD17
+```
+
+O resto sai pronto: HEX, CMYK e o Pantone mais próximo de cada cor, já
+separado em grupos. Não precisa ter as cores no documento.
+
+| Escreve assim | Vira |
+| --- | --- |
+| `#F8F852`, `F8F852`, `#F9F` | hexadecimal (3 dígitos expandem) |
+| `255, 153, 255` ou `255 153 255` ou `rgb(255,153,255)` | RGB — três números |
+| `0, 40, 0, 0` | CMYK — quatro números |
+| `Rosa: #F8F852`, `Rosa - #F8F852`, `- Rosa #F8F852` | nome + código |
+| `Principais` | título de grupo (linha sem código) |
+
+Só contam **três** números (RGB) ou **quatro** (CMYK) — por isso `Cores 2024` e
+`Grid 3 x 3` continuam sendo título de grupo, não cor. Hexadecimal sem `#` só
+vale como token isolado no fim da linha, para uma palavra que por acaso só tenha
+letras de A a F não virar cor. Linha com valor fora de faixa é ignorada e
+relatada no fim, sem derrubar as outras.
+
+### Lendo do documento
+
+Com `CONFIG.source` em `"auto"`, `"selection"` ou `"swatches"`, o script lê as
+cores que já estão no arquivo em vez de abrir a caixa:
 
 | Situação | O que ele lê |
 | --- | --- |
@@ -62,7 +99,7 @@ Abra o `.jsx` num editor de texto: o bloco `CONFIG`, no topo, controla tudo.
 
 | Opção | Padrão | O que faz |
 | --- | --- | --- |
-| `source` | `"auto"` | `"auto"`, `"selection"` ou `"swatches"` |
+| `source` | `"input"` | `"input"` (caixa para colar), `"auto"`, `"selection"` ou `"swatches"` |
 | `includeStrokes` | `true` | também coletar cor de contorno |
 | `showName` / `showHex` / `showCMYK` / `showRGB` / `showPantone` | | liga e desliga cada linha do rótulo |
 | `uppercaseName` | `true` | nome do cartão em caixa alta |
@@ -84,6 +121,9 @@ Abra o `.jsx` num editor de texto: o bloco `CONFIG`, no topo, controla tudo.
 | `minTextSize` | `6` | piso ao encolher texto que não coube |
 | `bentoTallFactor` | `1.5` | altura das linhas altas do bento |
 | `bentoPadding` | `16` | respiro entre a borda do cartão e o texto |
+| `groupHeadingSize` | `13` | corpo do título de grupo |
+| `groupHeadingGap` / `groupGapY` | `10` / `30` | respiro do título aos cartões, e entre grupos |
+| `uppercaseGroup` | `true` | título de grupo em caixa alta |
 | `fontName` | `""` | `""` usa a fonte padrão; ex.: `"Helvetica"` |
 | `layerName` | `"Color Codes"` | camada de destino, reutilizada a cada execução |
 

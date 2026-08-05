@@ -134,10 +134,33 @@ function makeDoc(colorSpace, swatches) {
 }
 
 var alerts = [];
+var pastedText = null;   // o que o "usuario" digita na caixa; null = cancelou
+var dialogShown = 0;
 
 function makeSandbox(doc) {
     var box = {
         alert: function (m) { alerts.push(String(m)); },
+        // ScriptUI de mentira: registra que a caixa abriu e devolve o texto
+        // preparado pelo teste. So o suficiente para exercitar promptForColors.
+        Window: function () {
+            var input = { text: "", preferredSize: null, active: false };
+            return {
+                orientation: "", alignChildren: "", spacing: 0, margins: 0,
+                add: function (kind) {
+                    if (kind === "edittext") return input;
+                    if (kind === "group") {
+                        return { alignment: "", add: function () { return {}; } };
+                    }
+                    return { characters: 0 };
+                },
+                show: function () {
+                    dialogShown++;
+                    if (pastedText === null) return 2;
+                    input.text = pastedText;
+                    return 1;
+                }
+            };
+        },
         DocumentColorSpace: { CMYK: "cmyk-doc", RGB: "rgb-doc" },
         ImageColorSpace: { RGB: "rgb", CMYK: "cmyk", GrayScale: "gray", LAB: "lab" },
         ColorConvertPurpose: { previewpurpose: "preview", defaultpurpose: "default" },
@@ -191,11 +214,18 @@ function makeSandbox(doc) {
     return box;
 }
 
+/*
+ * A fonte padrao do script e "input" (caixa para colar codigos). Os testes que
+ * exercitam leitura do documento rodam com "auto".
+ */
 function run(doc) {
-    alerts = [];
-    var box = makeSandbox(doc);
-    vm.runInContext(source, box);
-    return box;
+    return runWith(doc, { source: '"auto"' });
+}
+
+function runPasted(doc, text) {
+    pastedText = text;
+    dialogShown = 0;
+    return runWith(doc, {});
 }
 
 function legendOf(doc) {
@@ -557,7 +587,7 @@ for (var v3 = 0; v3 < 13; v3++) {
         fillColor: rgb((v3 * 37) % 256, (v3 * 91) % 256, (v3 * 143) % 256)
     });
 }
-runWith(doc, { bentoMosaic: "true", columns: "4" });
+runWith(doc, { bentoMosaic: "true", columns: "4", source: '"auto"' });
 
 var mTiles = tilesOf(doc);
 var minW = mTiles[0].width, maxW = mTiles[0].width;
@@ -602,7 +632,7 @@ for (var v2 = 0; v2 < 7; v2++) {
         fillColor: rgb((v2 * 53) % 256, (v2 * 17) % 256, (v2 * 211) % 256)
     });
 }
-runWith(doc, { layout: '"grid"' });
+runWith(doc, { layout: '"grid"', source: '"auto"' });
 
 var gTiles = tilesOf(doc);
 ok("grid desenhou os 7 blocos", gTiles.length === 7, "" + gTiles.length);
@@ -622,6 +652,109 @@ ok("grid: rotulo sempre em preto", allBlack);
 ok("grid: nao desenha painel de fundo",
     legendOf(doc).groupItems.items[0].pathItems.items.length === 0);
 
+
+// ---------------------------------------------------------------------------
+console.log("\nEntrada por codigos colados, com grupos");
+// ---------------------------------------------------------------------------
+doc = makeDoc("rgb-doc");
+runPasted(doc,
+    "Principais\n" +
+    "Rosa: 255, 153, 255\n" +
+    "Amarelo: #F8F852\n" +
+    "Copas: #851057\n" +
+    "Secundarias\n" +
+    "Bege: 255, 217, 218\n" +
+    "Ouro: #FFDD17\n"
+);
+
+ok("abriu a caixa de entrada", dialogShown === 1, "" + dialogShown);
+var pTiles = tilesOf(doc);
+ok("5 codigos viraram 5 cartoes", pTiles.length === 5, "" + pTiles.length);
+ok("nao precisou de nada no documento",
+    doc.selection.length === 0 && doc.swatches.length === 0);
+
+var byName = {};
+for (var pt2 = 0; pt2 < pTiles.length; pt2++) {
+    byName[pTiles[pt2].texts[0].contents] = pTiles[pt2];
+}
+ok("nomes viraram titulos em caixa alta",
+    byName["ROSA"] && byName["AMARELO"] && byName["COPAS"] &&
+    byName["BEGE"] && byName["OURO"],
+    Object.keys(byName).join(", "));
+
+var rosa = byName["ROSA"];
+ok("RGB colado virou a cor do cartao",
+    Math.round(rosa.fill.red) === 255 && Math.round(rosa.fill.green) === 153 &&
+    Math.round(rosa.fill.blue) === 255,
+    rosa.fill.red + "," + rosa.fill.green + "," + rosa.fill.blue);
+var rosaValues = rosa.texts[3].contents.split("\r");
+ok("HEX foi derivado do RGB colado", rosaValues[0] === "#FF99FF", rosaValues[0]);
+ok("CMYK foi derivado do RGB colado", /^\d+, \d+, \d+, \d+$/.test(rosaValues[2]),
+    rosaValues[2]);
+ok("achou o Pantone a partir do RGB colado",
+    /^PANTONE /.test(rosa.texts[1].contents), rosa.texts[1].contents);
+
+// Titulos de grupo ficam soltos no grupo raiz, junto do painel.
+var rootTexts = legendOf(doc).groupItems.items[0].textFrames.items;
+var headings = [];
+for (var ht = 0; ht < rootTexts.length; ht++) headings.push(rootTexts[ht].contents);
+ok("desenhou os dois titulos de grupo",
+    headings.length === 2 && headings[0] === "PRINCIPAIS" && headings[1] === "SECUNDARIAS",
+    JSON.stringify(headings));
+
+// O grupo Secundarias tem de comecar abaixo de todo o grupo Principais.
+var lowestPrincipal = Infinity, highestSecundaria = -Infinity;
+var principais = ["ROSA", "AMARELO", "COPAS"];
+var secundarias = ["BEGE", "OURO"];
+for (var pp = 0; pp < principais.length; pp++) {
+    if (byName[principais[pp]].bottom < lowestPrincipal) {
+        lowestPrincipal = byName[principais[pp]].bottom;
+    }
+}
+for (var ss = 0; ss < secundarias.length; ss++) {
+    if (byName[secundarias[ss]].top > highestSecundaria) {
+        highestSecundaria = byName[secundarias[ss]].top;
+    }
+}
+ok("o 2o grupo comeca abaixo do 1o", highestSecundaria < lowestPrincipal,
+    highestSecundaria.toFixed(0) + " vs " + lowestPrincipal.toFixed(0));
+ok("cada grupo comeca numa linha nova",
+    byName["BEGE"].left === byName["ROSA"].left,
+    byName["BEGE"].left + " vs " + byName["ROSA"].left);
+
+// Cancelar a caixa nao pode desenhar nada.
+doc = makeDoc("rgb-doc");
+runPasted(doc, null);
+ok("cancelar nao desenha nem avisa",
+    legendOf(doc) === null && alerts.length === 0, JSON.stringify(alerts));
+
+// Texto sem nenhum codigo reconhecivel: avisa em vez de desenhar vazio.
+doc = makeDoc("rgb-doc");
+runPasted(doc, "so um texto qualquer\nsem cor nenhuma aqui\n");
+ok("texto sem codigo avisa e nao desenha",
+    legendOf(doc) === null && alerts.length === 1 && /Nenhum codigo/.test(alerts[0]),
+    JSON.stringify(alerts));
+
+// Linha invalida nao derruba o resto, e o aviso diz o que foi ignorado.
+doc = makeDoc("rgb-doc");
+runPasted(doc, "Boa: #FF0000\nRuim: 300, 10, 10\n");
+ok("linha invalida nao impede as validas", tilesOf(doc).length === 1,
+    "" + tilesOf(doc).length);
+ok("o aviso relata a linha ignorada",
+    alerts.length === 1 && /nao entendida/.test(alerts[0]), JSON.stringify(alerts));
+
+// Sem titulo de grupo, nao deve sobrar cabecalho solto.
+doc = makeDoc("rgb-doc");
+runPasted(doc, "#FF0000\n#00FF00\n");
+ok("lista sem grupo nao desenha titulo",
+    legendOf(doc).groupItems.items[0].textFrames.items.length === 0);
+ok("lista sem grupo desenha os cartoes", tilesOf(doc).length === 2);
+
+// A mesma cor em grupos diferentes e legitima e nao pode ser deduplicada.
+doc = makeDoc("rgb-doc");
+runPasted(doc, "Principais\nVermelho: #FF0000\nSecundarias\nVermelho: #FF0000\n");
+ok("cor repetida em grupos diferentes aparece nos dois",
+    tilesOf(doc).length === 2, "" + tilesOf(doc).length);
 
 // ---------------------------------------------------------------------------
 console.log("\nCasos de borda");

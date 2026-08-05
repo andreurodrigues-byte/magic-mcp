@@ -19,22 +19,29 @@ var outPath = process.argv[3] || path.join(__dirname, "..", "preview-" + layout 
 var source = fs.readFileSync(path.join(__dirname, "..", "ColorCodesLegend.jsx"), "utf8");
 if (layout === "grid") source = source.replace('layout: "bento"', 'layout: "grid"');
 
-// Paleta de exemplo: claros, escuros e saturados, para exercitar o contraste.
-var PALETTE = [
-  ["Vermelho da marca", [228, 0, 43]],
-  ["Azul institucional", [0, 51, 160]],
-  ["Amarelo destaque", [255, 184, 28]],
-  ["Verde apoio", [0, 177, 64]],
-  ["Grafite", [83, 86, 90]],
-  ["Areia", [214, 199, 166]],
-  ["Roxo", [95, 37, 159]],
-  ["Ciano", [0, 156, 222]],
-  ["Preto marca", [45, 41, 38]],
-  ["Off-white", [244, 242, 237]],
-  ["Laranja", [255, 105, 0]],
-  ["Rosa", [214, 37, 152]],
-  ["Petroleo", [0, 84, 92]]
-];
+/*
+ * Lista de exemplo no formato que o usuario cola: dois grupos, nomes opcionais,
+ * RGB e HEX misturados. Cores claras, escuras e saturadas para exercitar a
+ * escolha de contraste da tinta.
+ */
+var PASTED = [
+  "Principais",
+  "Vermelho da marca: 228, 0, 43",
+  "Azul institucional: #0033A0",
+  "Amarelo destaque: 255, 184, 28",
+  "Verde apoio: #00B140",
+  "Roxo: 95, 37, 159",
+  "Ciano: #009CDE",
+  "",
+  "Secundarias",
+  "Grafite: 83, 86, 90",
+  "Areia: #D6C7A6",
+  "Preto marca: 45, 41, 38",
+  "Off-white: #F4F2ED",
+  "Laranja: 255, 105, 0",
+  "Rosa: #D62598",
+  "Petroleo: 0, 84, 92"
+].join("\n");
 
 // --- DOM simulado -----------------------------------------------------------
 
@@ -74,14 +81,7 @@ doc.documentColorSpace = "rgb-doc";
 doc.width = 1000;
 doc.artboards = [{ artboardRect: [0, 2000, 800, 0] }];
 doc.artboards.getActiveArtboardIndex = function () { return 0; };
-// Usa swatches nomeadas em vez da selecao: e o caso com rotulo mais longo
-// (ganha a linha do nome), ou seja, o pior cenario para o ajuste de corpo.
-doc.swatches = PALETTE.map(function (entry) {
-  return {
-    name: entry[0],
-    color: { typename: "RGBColor", red: entry[1][0], green: entry[1][1], blue: entry[1][2] }
-  };
-});
+doc.swatches = [];
 doc.swatches.getSelected = function () { return []; };
 var layers = [];
 doc.layers = layers;
@@ -94,6 +94,19 @@ doc.selection = [];
 
 var box = {
   alert: function () {},
+  // ScriptUI de mentira: devolve a lista de exemplo como se tivesse sido colada.
+  Window: function () {
+    var input = { text: "", preferredSize: null, active: false };
+    return {
+      orientation: "", alignChildren: "", spacing: 0, margins: 0,
+      add: function (kind) {
+        if (kind === "edittext") return input;
+        if (kind === "group") return { alignment: "", add: function () { return {}; } };
+        return { characters: 0 };
+      },
+      show: function () { input.text = PASTED; return 1; }
+    };
+  },
   DocumentColorSpace: { CMYK: "cmyk-doc", RGB: "rgb-doc" },
   ImageColorSpace: { RGB: "rgb", CMYK: "cmyk", GrayScale: "gray", LAB: "lab" },
   ColorConvertPurpose: { previewpurpose: "preview", defaultpurpose: "default" },
@@ -143,6 +156,9 @@ function noteBounds(r) {
 for (var b = 0; b < backdrops.length; b++) {
   rects.push(backdrops[b]);
   noteBounds(backdrops[b]);
+}
+for (var rt = 0; rt < root.textFrames.items.length; rt++) {
+  texts.push(root.textFrames.items[rt]);
 }
 for (var c = 0; c < cards.length; c++) {
   for (var p = 0; p < cards[c].pathItems.items.length; p++) {

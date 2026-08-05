@@ -18,10 +18,13 @@
 // CONFIG - ajuste aqui
 // ============================================================================
 var CONFIG = {
+    // "input"     = abre uma caixa para colar a lista de codigos (RGB, HEX ou
+    //               CMYK), com titulos de grupo. Nao precisa ter as cores no
+    //               documento. Ver parseColorInput para o formato aceito.
     // "auto"      = usa a selecao; se nada estiver selecionado, usa as swatches
     // "selection" = so os objetos selecionados
     // "swatches"  = so o painel Swatches (as selecionadas, ou todas)
-    source: "auto",
+    source: "input",
 
     includeStrokes: true, // tambem coletar cor de contorno dos objetos
 
@@ -89,6 +92,12 @@ var CONFIG = {
     bentoTallFactor: 1.5,
     // Só no bento: respiro entre a borda do cartao e o texto, em pontos.
     bentoPadding: 16,
+
+    // Titulos de grupo ("Principais", "Secundarias").
+    groupHeadingSize: 13,
+    groupHeadingGap: 10, // do titulo ate a primeira linha de cartoes
+    groupGapY: 30,       // entre o fim de um grupo e o titulo do proximo
+    uppercaseGroup: true,
 
     layerName: "Color Codes"
 };
@@ -497,6 +506,131 @@ function cardTextChars(card, gapChars) {
     return widest;
 }
 
+/*
+ * Le uma lista de cores colada pelo usuario.
+ *
+ * Um codigo por linha. Aceita:
+ *   #FF99FF   FF99FF   #F9F        hexadecimal
+ *   255, 153, 255                  tres numeros = RGB
+ *   0, 40, 0, 0                    quatro numeros = CMYK
+ *   rgb(255, 153, 255)             a pontuacao e ignorada
+ *   Rosa: #FF99FF                  nome antes do codigo
+ *
+ * Linha SEM codigo vira titulo de grupo, e as cores seguintes entram nele:
+ *
+ *   Principais          <- grupo
+ *   Rosa: #FF99FF
+ *   Amarelo: #F8F852
+ *   Secundarias         <- grupo
+ *   Bege: #FFD9DA
+ *
+ * Devolve { groups: [{name, colors: [{name, rgb} | {name, cmyk}]}], errors: [] }.
+ */
+function trimText(s) {
+    return String(s).replace(/^[\s ]+/, "").replace(/[\s ]+$/, "");
+}
+
+function parseColorLine(line) {
+    // Hexadecimal com # e o caso sem ambiguidade: tenta primeiro.
+    var hexMatch = line.match(/#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/);
+    if (hexMatch) {
+        return { name: trimSeparators(line.substring(0, line.indexOf(hexMatch[0]))),
+                 rgb: hexToRgb(hexMatch[1]) };
+    }
+
+    // Tres numeros = RGB, quatro = CMYK. Qualquer outra quantidade nao e cor:
+    // "Cores 2024" e "Grid 3 x 3" tem de continuar sendo titulo de grupo.
+    var numbers = line.match(/\d+(\.\d+)?/g);
+    if (numbers && (numbers.length === 3 || numbers.length === 4)) {
+        var values = [];
+        for (var i = 0; i < numbers.length; i++) values[i] = parseFloat(numbers[i]);
+        var name = trimSeparators(line.substring(0, line.indexOf(numbers[0])));
+
+        if (values.length === 3) {
+            for (var r = 0; r < 3; r++) {
+                if (values[r] < 0 || values[r] > 255) {
+                    return { error: "RGB fora de 0-255" };
+                }
+            }
+            return { name: name, rgb: values };
+        }
+        for (var c = 0; c < 4; c++) {
+            if (values[c] < 0 || values[c] > 100) {
+                return { error: "CMYK fora de 0-100" };
+            }
+        }
+        return { name: name, cmyk: values };
+    }
+
+    // Hexadecimal sem #: so quando for o token isolado no fim da linha, para
+    // nao confundir uma palavra que por acaso so tenha letras de A a F.
+    var bare = line.match(/(^|\s)([0-9a-fA-F]{6})\s*$/);
+    if (bare) {
+        return { name: trimSeparators(line.substring(0, line.lastIndexOf(bare[2]))),
+                 rgb: hexToRgb(bare[2]) };
+    }
+
+    return null;
+}
+
+function trimSeparators(s) {
+    return trimText(String(s).replace(/[:\-–—|=,]+\s*$/, ""));
+}
+
+function hexToRgb(hex) {
+    if (hex.length === 3) {
+        hex = hex.charAt(0) + hex.charAt(0) +
+              hex.charAt(1) + hex.charAt(1) +
+              hex.charAt(2) + hex.charAt(2);
+    }
+    return [
+        parseInt(hex.substring(0, 2), 16),
+        parseInt(hex.substring(2, 4), 16),
+        parseInt(hex.substring(4, 6), 16)
+    ];
+}
+
+function parseColorInput(text) {
+    var lines = String(text).replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+    var groups = [];
+    var errors = [];
+    var current = null;
+
+    for (var i = 0; i < lines.length; i++) {
+        var line = trimText(lines[i]).replace(/^[-*•]\s+/, "");
+        if (!line) continue;
+
+        var parsed = parseColorLine(line);
+
+        if (!parsed) {
+            // Titulo de grupo. Tira enfeites tipo "## Principais ##" e "-- x --".
+            var name = trimText(line.replace(/^[#=\-–—\s]+/, "").replace(/[#=\-–—:\s]+$/, ""));
+            current = { name: name, colors: [] };
+            groups.push(current);
+            continue;
+        }
+
+        if (parsed.error) {
+            errors.push("linha " + (i + 1) + ": " + parsed.error + " (" + line + ")");
+            continue;
+        }
+
+        if (!current) {
+            current = { name: "", colors: [] };
+            groups.push(current);
+        }
+        current.colors.push(parsed);
+    }
+
+    // Grupo declarado e nunca preenchido nao deve virar titulo solto.
+    var kept = [];
+    for (var g = 0; g < groups.length; g++) {
+        if (groups[g].colors.length) kept.push(groups[g]);
+    }
+
+    return { groups: kept, errors: errors };
+}
+
 /* Versao em texto corrido, usada pelo layout em grade. */
 function cardToLines(card) {
     var lines = [];
@@ -617,6 +751,64 @@ function collectFromItems(items, sink) {
     }
 }
 
+/*
+ * Caixa para colar a lista de cores. Devolve o texto, ou null se cancelado.
+ *
+ * Fica de fora dos testes: ScriptUI so existe dentro do Illustrator. Toda a
+ * logica esta em parseColorInput, que e pura e testada.
+ */
+function promptForColors() {
+    var dialog = new Window("dialog", "Legenda de cores");
+    dialog.orientation = "column";
+    dialog.alignChildren = "fill";
+    dialog.spacing = 10;
+    dialog.margins = 16;
+
+    var help = dialog.add("statictext", undefined,
+        "Cole os codigos, um por linha:\n" +
+        "\n" +
+        "   Principais\n" +
+        "   Rosa: 255, 153, 255\n" +
+        "   Amarelo: #F8F852\n" +
+        "   Secundarias\n" +
+        "   Bege: 255, 217, 218\n" +
+        "\n" +
+        "Aceita HEX, tres numeros (RGB) ou quatro (CMYK). Linha sem codigo\n" +
+        "vira titulo de grupo. O nome antes do codigo e opcional.",
+        { multiline: true });
+    help.characters = 62;
+
+    var input = dialog.add("edittext", undefined, "", { multiline: true, scrolling: true });
+    input.preferredSize = [440, 260];
+    input.active = true;
+
+    var buttons = dialog.add("group");
+    buttons.alignment = "right";
+    buttons.add("button", undefined, "Cancelar", { name: "cancel" });
+    buttons.add("button", undefined, "Gerar", { name: "ok" });
+
+    return dialog.show() === 1 ? input.text : null;
+}
+
+function collectFromInput(text, sink) {
+    var parsed = parseColorInput(text);
+
+    for (var g = 0; g < parsed.groups.length; g++) {
+        var group = parsed.groups[g];
+        for (var c = 0; c < group.colors.length; c++) {
+            var color = group.colors[c];
+            sink.push({
+                color: null,
+                name: color.name || null,
+                group: group.name,
+                rgb: color.rgb || null,
+                cmyk: color.cmyk || null
+            });
+        }
+    }
+    return parsed.errors;
+}
+
 function collectFromSwatches(doc, sink) {
     var swatches = null;
     try { swatches = doc.swatches.getSelected(); } catch (e) {}
@@ -633,7 +825,27 @@ function buildRecords(raw) {
     var skipped = 0;
 
     for (var i = 0; i < raw.length; i++) {
-        var norm = normalizeColor(raw[i].color);
+        var norm;
+
+        if (raw[i].rgb || raw[i].cmyk) {
+            // Veio da lista colada: ja e um par de valores, nao um objeto de
+            // cor do Illustrator. A conversao entre os dois espacos usa o
+            // perfil do documento, igual ao resto.
+            var inRgb = raw[i].rgb;
+            var inCmyk = raw[i].cmyk;
+            if (!inRgb) {
+                inRgb = convert(ImageColorSpace.CMYK, inCmyk, ImageColorSpace.RGB)
+                    || cmykToRgbNaive(inCmyk);
+            }
+            if (!inCmyk) {
+                inCmyk = convert(ImageColorSpace.RGB, inRgb, ImageColorSpace.CMYK)
+                    || rgbToCmykNaive(inRgb);
+            }
+            norm = { rgb: inRgb, cmyk: inCmyk, spotName: null };
+        } else {
+            norm = normalizeColor(raw[i].color);
+        }
+
         if (!norm) {
             skipped++;
             continue;
@@ -641,11 +853,13 @@ function buildRecords(raw) {
 
         var hex = toHex(norm.rgb);
         var name = norm.spotName || raw[i].name || null;
-        var key = hex + "/" + (name || "");
+        var group = raw[i].group || "";
+        var key = group + "/" + hex + "/" + (name || "");
         if (seen[key]) continue;
         seen[key] = true;
 
         records.push({
+            group: group,
             name: name,
             hex: hex,
             rgb: norm.rgb,
@@ -755,67 +969,102 @@ function fitTextSize(chars, maxWidth, baseSize, minSize) {
  *
  * `cards` sao as estruturas de buildCard; `unitW` a largura de uma coluna.
  */
-function planBento(cards, unitW, cfg) {
+function planBento(sections, unitW, cfg) {
     var pad = cfg.bentoPadding;
     var tiles = [];
+    var headings = [];
     var y = 0;
-    var index = 0;
     var rowIndex = 0;
     var maxRight = 0;
 
-    while (index < cards.length) {
-        var spans = cfg.bentoMosaic ? bentoRowSpans(cfg.columns, rowIndex) : null;
+    for (var g = 0; g < sections.length; g++) {
+        var section = sections[g];
+        if (!section.cards.length) continue;
 
-        // Mede a linha inteira antes de posicionar: os cartoes precisam da
-        // mesma altura, que e a do conteudo mais alto entre eles.
-        var rowTiles = [];
-        var needed = 0;
-        for (var s = 0; s < cfg.columns && index + s < cards.length; s++) {
-            var span = spans ? spans[s] : 1;
-            if (span == null) break;
+        if (g > 0) y += cfg.groupGapY;
 
-            var w = unitW * span + cfg.gapX * (span - 1);
-            var card = cards[index + s];
-            var size = fitTextSize(cardTextChars(card), w - pad * 2,
-                                   cfg.textSize, cfg.minTextSize);
-            var lead = size * 1.3;
-
-            // cabecalho + respiro + linhas de valor, tudo entre os paddings
-            var headerH = (card.title || card.badge) ? lead : 0;
-            var bodyH = card.rows.length * lead;
-            var contentH = headerH + bodyH + pad * 2;
-
-            rowTiles.push({ index: index + s, w: w, size: size, contentH: contentH });
-            if (contentH > needed) needed = contentH;
-
-            if (spans && s + 1 >= spans.length) break;
+        if (section.name) {
+            // y aqui e o TOPO da caixa do titulo; o desenho converte para a
+            // linha de base.
+            headings.push({ text: section.name, x: 0, y: y, size: cfg.groupHeadingSize });
+            y += cfg.groupHeadingSize * 1.3 + cfg.groupHeadingGap;
         }
-        if (!rowTiles.length) break;
 
-        var nominal = cfg.swatchH *
-            ((cfg.bentoMosaic && bentoRowIsTall(rowIndex)) ? cfg.bentoTallFactor : 1);
-        var rowH = nominal > needed ? nominal : needed;
+        var index = 0;
+        while (index < section.cards.length) {
+            var spans = cfg.bentoMosaic ? bentoRowSpans(cfg.columns, rowIndex) : null;
 
-        var x = 0;
-        for (var t = 0; t < rowTiles.length; t++) {
-            rowTiles[t].x = x;
-            rowTiles[t].y = y;
-            rowTiles[t].h = rowH;
-            tiles.push(rowTiles[t]);
-            x += rowTiles[t].w + cfg.gapX;
+            // Mede a linha inteira antes de posicionar: os cartoes precisam da
+            // mesma altura, que e a do conteudo mais alto entre eles.
+            var rowTiles = [];
+            var needed = 0;
+            for (var s = 0; s < cfg.columns && index + s < section.cards.length; s++) {
+                var span = spans ? spans[s] : 1;
+                if (span == null) break;
+
+                var w = unitW * span + cfg.gapX * (span - 1);
+                var entry = section.cards[index + s];
+                var size = fitTextSize(cardTextChars(entry.card), w - pad * 2,
+                                       cfg.textSize, cfg.minTextSize);
+                var lead = size * 1.3;
+
+                // cabecalho + linhas de valor, tudo entre os paddings
+                var headerH = (entry.card.title || entry.card.badge) ? lead : 0;
+                var contentH = headerH + entry.card.rows.length * lead + pad * 2;
+
+                rowTiles.push({ index: entry.index, w: w, size: size });
+                if (contentH > needed) needed = contentH;
+
+                if (spans && s + 1 >= spans.length) break;
+            }
+            if (!rowTiles.length) break;
+
+            var nominal = cfg.swatchH *
+                ((cfg.bentoMosaic && bentoRowIsTall(rowIndex)) ? cfg.bentoTallFactor : 1);
+            var rowH = nominal > needed ? nominal : needed;
+
+            var x = 0;
+            for (var t = 0; t < rowTiles.length; t++) {
+                rowTiles[t].x = x;
+                rowTiles[t].y = y;
+                rowTiles[t].h = rowH;
+                tiles.push(rowTiles[t]);
+                x += rowTiles[t].w + cfg.gapX;
+            }
+            if (x - cfg.gapX > maxRight) maxRight = x - cfg.gapX;
+
+            index += rowTiles.length;
+            y += rowH + cfg.gapY;
+            rowIndex++;
         }
-        if (x - cfg.gapX > maxRight) maxRight = x - cfg.gapX;
-
-        index += rowTiles.length;
-        y += rowH + cfg.gapY;
-        rowIndex++;
     }
 
     return {
         tiles: tiles,
+        headings: headings,
         width: maxRight,
         height: y > 0 ? y - cfg.gapY : 0
     };
+}
+
+/*
+ * Junta os registros em secoes na ordem em que os grupos aparecem. Registro sem
+ * grupo cai numa secao unica sem titulo, que e o caso de quem le do documento.
+ */
+function groupRecords(records, cards) {
+    var sections = [];
+    var byName = {};
+
+    for (var i = 0; i < records.length; i++) {
+        var name = records[i].group || "";
+        var key = "g:" + name;
+        if (!byName[key]) {
+            byName[key] = { name: name, cards: [] };
+            sections.push(byName[key]);
+        }
+        byName[key].cards.push({ index: i, card: cards[i] });
+    }
+    return sections;
 }
 
 /* Contexto de desenho compartilhado pelos dois layouts. */
@@ -941,13 +1190,37 @@ function drawGrid(canvas, records) {
     }
     var rowH = CONFIG.swatchH + tallest + CONFIG.gapY;
 
-    for (var i = 0; i < records.length; i++) {
-        var x = canvas.originX + (i % CONFIG.columns) * (unitW + CONFIG.gapX);
-        var y = canvas.originY - Math.floor(i / CONFIG.columns) * rowH;
+    // Os grupos vindos da lista colada valem aqui tambem: cada um comeca numa
+    // linha nova, com o titulo acima.
+    var cardsForGrouping = [];
+    for (var k = 0; k < records.length; k++) cardsForGrouping[k] = null;
+    var sections = groupRecords(records, cardsForGrouping);
 
-        var card = drawTile(canvas, records[i], x, y, unitW, CONFIG.swatchH);
-        drawText(canvas, card, labels[i], x,
-                 y - CONFIG.swatchH - sizes[i] - 4, canvas.black, sizes[i], "left");
+    var y = canvas.originY;
+    for (var g = 0; g < sections.length; g++) {
+        if (g > 0) y -= CONFIG.groupGapY;
+
+        if (sections[g].name) {
+            var heading = CONFIG.uppercaseGroup
+                ? sections[g].name.toUpperCase()
+                : sections[g].name;
+            drawText(canvas, canvas.group, heading, canvas.originX,
+                     y - CONFIG.groupHeadingSize, canvas.black,
+                     CONFIG.groupHeadingSize, "left");
+            y -= CONFIG.groupHeadingSize * 1.3 + CONFIG.groupHeadingGap;
+        }
+
+        for (var c = 0; c < sections[g].cards.length; c++) {
+            var idx = sections[g].cards[c].index;
+            var x = canvas.originX + (c % CONFIG.columns) * (unitW + CONFIG.gapX);
+            var cardY = y - Math.floor(c / CONFIG.columns) * rowH;
+
+            var card = drawTile(canvas, records[idx], x, cardY, unitW, CONFIG.swatchH);
+            drawText(canvas, card, labels[idx], x,
+                     cardY - CONFIG.swatchH - sizes[idx] - 4,
+                     canvas.black, sizes[idx], "left");
+        }
+        y -= Math.ceil(sections[g].cards.length / CONFIG.columns) * rowH;
     }
 }
 
@@ -974,7 +1247,7 @@ function drawBento(canvas, records) {
         ? autoUnitWidth(chars, CONFIG.textSize, pad, CONFIG.swatchW, CONFIG.maxSwatchW)
         : CONFIG.swatchW;
 
-    var plan = planBento(cards, unitW, CONFIG);
+    var plan = planBento(groupRecords(records, cards), unitW, CONFIG);
 
     // O fundo e o painel entram primeiro: no Illustrator o que e criado depois
     // fica por cima, entao desenhar os cartoes em seguida os deixa na frente.
@@ -990,6 +1263,14 @@ function drawBento(canvas, records) {
         canvas.originX - panelPad, canvas.originY + panelPad,
         plan.width + panelPad * 2, plan.height + panelPad * 2,
         CONFIG.panelColor, CONFIG.panelRadius);
+
+    for (var hd = 0; hd < plan.headings.length; hd++) {
+        var head = plan.headings[hd];
+        var text = CONFIG.uppercaseGroup ? head.text.toUpperCase() : head.text;
+        drawText(canvas, canvas.group, text,
+                 canvas.originX + head.x, canvas.originY - head.y - head.size,
+                 canvas.black, head.size, "left");
+    }
 
     for (var t = 0; t < plan.tiles.length; t++) {
         var tile = plan.tiles[t];
@@ -1053,13 +1334,24 @@ function main() {
 
     var doc = app.activeDocument;
     var raw = [];
+    var inputErrors = [];
     var mode = CONFIG.source;
 
     if (mode === "auto") {
         mode = (doc.selection && doc.selection.length > 0) ? "selection" : "swatches";
     }
 
-    if (mode === "selection") {
+    if (mode === "input") {
+        var text = promptForColors();
+        if (text === null) return; // cancelado
+        inputErrors = collectFromInput(text, raw);
+        if (raw.length === 0) {
+            var why = "Nenhum codigo de cor reconhecido no que foi colado.";
+            if (inputErrors.length) why += "\n\n" + inputErrors.join("\n");
+            alert(why);
+            return;
+        }
+    } else if (mode === "selection") {
         if (!doc.selection || doc.selection.length === 0) {
             alert("Nada selecionado.");
             return;
@@ -1086,6 +1378,9 @@ function main() {
     var msg = built.records.length + " cor(es) na legenda.";
     if (built.skipped > 0) {
         msg += "\n" + built.skipped + " item(ns) ignorado(s): gradiente, padrao ou sem preenchimento.";
+    }
+    if (inputErrors.length) {
+        msg += "\n\n" + inputErrors.length + " linha(s) nao entendida(s):\n" + inputErrors.join("\n");
     }
     alert(msg);
 }
