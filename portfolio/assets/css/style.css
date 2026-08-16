@@ -1,0 +1,253 @@
+/* Ândreu Rodrigues — portfolio
+   Grid escuro full-bleed, 2 colunas, legendas no hover. */
+
+:root {
+  --bg: #000;
+  --fg: #fff;
+  --muted: #8a8a8a;
+  --gap: 6px;
+  --container: min(1280px, 88vw);
+  --header-h: 56px;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: "Helvetica Neue", Helvetica, Inter, system-ui, -apple-system, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: inherit; text-decoration: none; }
+
+img { display: block; max-width: 100%; }
+
+.container { width: var(--container); margin-inline: auto; }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---------- header ---------- */
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg);
+  height: var(--header-h);
+  display: flex;
+  align-items: center;
+}
+
+.site-header .container {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.wordmark {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.site-nav {
+  display: flex;
+  gap: 18px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.site-nav a { color: var(--muted); transition: color 0.25s var(--ease); }
+.site-nav a:hover,
+.site-nav a:focus-visible,
+.site-nav a[aria-current="page"] { color: var(--fg); }
+
+/* ---------- grid de trabalhos ---------- */
+
+.work-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--gap);
+  padding-block: var(--gap) 96px;
+}
+
+.work-item {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: #0d0d0d;
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.7s var(--ease), transform 0.7s var(--ease);
+}
+
+.work-item.is-visible { opacity: 1; transform: none; }
+
+.work-item__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.6s var(--ease);
+}
+
+.work-item__overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 20px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.78) 0%, rgba(0, 0, 0, 0.32) 45%, rgba(0, 0, 0, 0) 100%);
+  opacity: 0;
+  transition: opacity 0.4s var(--ease);
+}
+
+.work-item__title {
+  margin: 0;
+  font-size: clamp(13px, 1.1vw, 16px);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.work-item__year {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--muted);
+}
+
+@media (hover: hover) {
+  .work-item:hover .work-item__img,
+  .work-item:focus-visible .work-item__img { transform: scale(1.04); }
+  .work-item:hover .work-item__overlay,
+  .work-item:focus-visible .work-item__overlay { opacity: 1; }
+}
+
+/* touch: legenda sempre visível, sem estado de hover */
+@media (hover: none) {
+  .work-item__overlay { opacity: 1; }
+}
+
+.work-item:focus-visible { outline: 1px solid var(--fg); outline-offset: -1px; }
+
+/* ---------- páginas de texto ---------- */
+
+.page {
+  padding-block: clamp(64px, 12vh, 140px) 96px;
+  max-width: 62ch;
+}
+
+.page h1 {
+  margin: 0 0 32px;
+  font-size: clamp(28px, 4vw, 46px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.page p { margin: 0 0 18px; color: #d6d6d6; }
+
+.page a { border-bottom: 1px solid #444; transition: border-color 0.25s var(--ease); }
+.page a:hover { border-color: var(--fg); }
+
+.contact-list {
+  list-style: none;
+  margin: 32px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.contact-list dt,
+.contact-list .label {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+/* ---------- footer ---------- */
+
+.site-footer {
+  padding-block: 40px 56px;
+  text-align: center;
+  position: relative;
+}
+
+.social {
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.social a {
+  color: var(--muted);
+  transition: color 0.25s var(--ease);
+  display: inline-flex;
+}
+
+.social a:hover, .social a:focus-visible { color: var(--fg); }
+.social svg { width: 16px; height: 16px; fill: currentColor; }
+
+.colophon {
+  margin: 0;
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #5a5a5a;
+}
+
+.to-top {
+  position: absolute;
+  right: 0;
+  bottom: 56px;
+  font-size: 14px;
+  color: var(--muted);
+  transition: color 0.25s var(--ease);
+}
+
+.to-top:hover { color: var(--fg); }
+
+/* ---------- responsivo ---------- */
+
+@media (max-width: 720px) {
+  :root { --container: 92vw; --gap: 4px; }
+  .work-grid { grid-template-columns: 1fr; }
+  .to-top { position: static; display: block; margin-top: 16px; }
+}
+
+@media (max-width: 480px) {
+  .wordmark { font-size: 11px; }
+  .site-nav { gap: 12px; font-size: 9px; letter-spacing: 0.1em; }
+  .work-item__overlay { padding: 14px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+  .work-item { opacity: 1; transform: none; }
+}
