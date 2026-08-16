@@ -39,8 +39,23 @@ constante e criar as páginas locais com o mesmo slug.
 
 ## Publicar
 
-Conteúdo 100% estático — serve em Vercel, Netlify ou GitHub Pages
-apontando para esta pasta, sem etapa de build no servidor.
+Conteúdo 100% estático — nenhuma dependência, nenhuma etapa de build no
+servidor. O `vercel.json` na raiz do repositório já aponta para esta
+pasta como diretório de saída.
+
+Na Vercel:
+
+1. **Add New → Project** e importe `andreurodrigues-byte/magic-mcp`
+2. Em **Branch**, selecione `claude/portfolio-layout-da6ulr`
+3. Não altere Framework, Build nem Output — o `vercel.json` cuida disso
+4. **Deploy**
+
+`cleanUrls` está ligado, então as páginas ficam em `/sobre` e `/contato`
+(sem `.html`). Para o domínio próprio, aponte o DNS em
+**Settings → Domains** depois que o deploy estiver validado.
+
+Netlify e GitHub Pages também servem, bastando publicar a pasta
+`portfolio/` como raiz do site.
 
 ## Atualizar as capas
 
