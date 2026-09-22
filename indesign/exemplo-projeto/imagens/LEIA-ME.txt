@@ -1,0 +1,9 @@
+Coloque aqui as imagens da apresentacao.
+
+Dicas:
+- Use nomes sem espacos e sem acentos: capa.jpg, ref-01.jpg, grafico-vendas.png.
+- Formatos aceitos: os mesmos do comando Colocar do InDesign
+  (JPG, PNG, TIFF, PSD, AI, PDF, EPS).
+- Resolucao: 300 dpi no tamanho final para impressao; 150 dpi basta para tela.
+- Se o caminho escrito no conteudo.json estiver errado, o script ainda procura
+  um arquivo com o mesmo nome dentro da pasta do projeto e avisa no relatorio.
