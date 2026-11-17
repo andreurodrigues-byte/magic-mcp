@@ -35,6 +35,12 @@ if (!src) {
 
 var templatePath = path.join(__dirname, "..", "ColorCodesLegend.template.jsx");
 var outputPath = path.join(__dirname, "..", "ColorCodesLegend.jsx");
+
+// A skill e autocontida: o usuario copia a pasta inteira para ~/.claude/skills,
+// entao ela leva a sua propria copia do script. Gerar as duas aqui evita que
+// uma fique para tras.
+var skillCopy = path.join(__dirname, "..", "skills", "pantone-board",
+                          "ColorCodesLegend.jsx");
 var MARKER = "/*__PANTONE_TABLE__*/";
 
 var data = JSON.parse(fs.readFileSync(src, "utf8"));
@@ -73,9 +79,15 @@ if (template.indexOf(MARKER) === -1) {
   process.exit(1);
 }
 
-fs.writeFileSync(outputPath, template.split(MARKER).join(table), "utf8");
+var built = template.split(MARKER).join(table);
+fs.writeFileSync(outputPath, built, "utf8");
 
-console.error(
-  out.length + " cores -> " + path.relative(process.cwd(), outputPath) +
-  " (" + fs.statSync(outputPath).size + " bytes)"
-);
+var targets = [outputPath];
+if (fs.existsSync(path.dirname(skillCopy))) {
+  fs.writeFileSync(skillCopy, built, "utf8");
+  targets.push(skillCopy);
+}
+
+console.error(out.length + " cores -> " +
+  targets.map(function (t) { return path.relative(process.cwd(), t); }).join(", ") +
+  " (" + fs.statSync(outputPath).size + " bytes cada)");

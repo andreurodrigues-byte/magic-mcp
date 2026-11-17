@@ -38,7 +38,7 @@ var CONFIG = {
     // Quantos Pantones mais proximos listar. O primeiro vai para o cabecalho do
     // cartao; do segundo em diante viram linhas do bloco de valores. Empates
     // dentro de 1-2 de Delta E sao comuns, entao 2 e util quando a escolha vai
-    // para producao — so deixa o cartao mais cheio. Ver illustrator/README.md.
+    // para producao - so deixa o cartao mais cheio. Ver illustrator/README.md.
     pantoneCount: 1,
 
     // Mostra a distancia perceptual junto do codigo: "PANTONE 454 C  dE 2.6".
@@ -123,9 +123,9 @@ var CONFIG = {
     bentoLineSpacing: 2.4,
     gridLineSpacing: 1.35,
 
-    // Só no bento: altura das linhas altas do mosaico, como fator de swatchH.
+    // So no bento: altura das linhas altas do mosaico, como fator de swatchH.
     bentoTallFactor: 1.5,
-    // Só no bento: respiro entre a borda do cartao e o texto, em pontos.
+    // So no bento: respiro entre a borda do cartao e o texto, em pontos.
     bentoPadding: 15,
 
     // Titulos de grupo ("Principais", "Secundarias").
@@ -139,7 +139,7 @@ var CONFIG = {
 
 // ============================================================================
 // Tabela Pantone Solid Coated: "codigo;RRGGBB" separados por "|".
-// Gerada por illustrator/tools/build-pantone-table.cjs — ver aquele arquivo
+// Gerada por illustrator/tools/build-pantone-table.cjs - ver aquele arquivo
 // para a origem dos dados e o porque de o match usar hex, e nao Lab medido.
 // ============================================================================
 var PANTONE_TABLE = "/*__PANTONE_TABLE__*/";
@@ -413,7 +413,7 @@ function labToRgb(lab) {
  * Cor de texto derivada da propria cor do bloco: mesma matiz, luminosidade
  * empurrada para o lado oposto ate atingir `minContrast`.
  *
- * Preto e branco puros resolvem contraste mas achatam o cartao — o rotulo fica
+ * Preto e branco puros resolvem contraste mas achatam o cartao - o rotulo fica
  * parecendo colado por cima. Manter a e b do Lab e mexer so no L da aquele
  * magenta escuro sobre rosa, oliva sobre amarelo, rosa claro sobre vinho. Se
  * nenhum L atingir o contraste pedido (acontece em cores ja muito escuras ou
@@ -485,7 +485,7 @@ function formatNumbers(values, separator) {
  *
  * O Pantone mais proximo vai para o cabecalho; os demais, quando pantoneCount
  * for maior que 1, viram linhas do bloco. Toda linha de Pantone continua sendo
- * resultado de busca por proximidade, nunca leitura da cor — o dE ao lado
+ * resultado de busca por proximidade, nunca leitura da cor - o dE ao lado
  * (showDeltaE) e o que diz o quanto ela esta longe.
  */
 function buildCard(rec, cfg) {
@@ -530,7 +530,7 @@ function buildCard(rec, cfg) {
  * Largura de texto que o cartao precisa, em caracteres.
  *
  * Cada linha e um par rotulo/valor em colunas opostas, entao o que importa e a
- * soma dos dois mais uma folga entre eles — nao a linha mais longa. O mesmo
+ * soma dos dois mais uma folga entre eles - nao a linha mais longa. O mesmo
  * vale para titulo e badge no cabecalho.
  */
 function cardTextChars(card, gapChars) {
@@ -570,7 +570,7 @@ function cardTextChars(card, gapChars) {
  * Devolve { groups: [{name, colors: [{name, rgb} | {name, cmyk}]}], errors: [] }.
  */
 function trimText(s) {
-    return String(s).replace(/^[\s ]+/, "").replace(/[\s ]+$/, "");
+    return String(s).replace(/^[\s?]+/, "").replace(/[\s?]+$/, "");
 }
 
 function parseColorLine(line) {
@@ -617,7 +617,7 @@ function parseColorLine(line) {
 }
 
 function trimSeparators(s) {
-    return trimText(String(s).replace(/[:\-–—|=,]+\s*$/, ""));
+    return trimText(String(s).replace(/[:\---|=,]+\s*$/, ""));
 }
 
 function hexToRgb(hex) {
@@ -640,14 +640,14 @@ function parseColorInput(text) {
     var current = null;
 
     for (var i = 0; i < lines.length; i++) {
-        var line = trimText(lines[i]).replace(/^[-*•]\s+/, "");
+        var line = trimText(lines[i]).replace(/^[-**]\s+/, "");
         if (!line) continue;
 
         var parsed = parseColorLine(line);
 
         if (!parsed) {
             // Titulo de grupo. Tira enfeites tipo "## Principais ##" e "-- x --".
-            var name = trimText(line.replace(/^[#=\-–—\s]+/, "").replace(/[#=\-–—:\s]+$/, ""));
+            var name = trimText(line.replace(/^[#=\---\s]+/, "").replace(/[#=\---:\s]+$/, ""));
             current = { name: name, colors: [] };
             groups.push(current);
             continue;
@@ -792,6 +792,23 @@ function collectFromItems(items, sink) {
             if (CONFIG.includeStrokes && item.stroked) sink.push({ color: item.strokeColor, name: null });
         } catch (e) {}
     }
+}
+
+/*
+ * Lista de cores embutida no proprio arquivo.
+ *
+ * Vazia, o script abre a caixa para colar (source "input"). Preenchida, ele
+ * usa ela direto e nao pergunta nada - e assim que o arquivo gerado pela skill
+ * roda com um duplo clique, sem ninguem redigitar a paleta.
+ *
+ * Mesmo formato da caixa; ver parseColorInput. Exemplo:
+ *
+ *   var EMBEDDED_COLORS = "Principais\rRosa: 255, 153, 255\rAmarelo: #F8F852";
+ */
+var EMBEDDED_COLORS = "";
+
+function hasEmbeddedColors() {
+    return EMBEDDED_COLORS && trimText(EMBEDDED_COLORS).length > 0;
 }
 
 /*
@@ -959,7 +976,7 @@ function longestLineLength(text) {
  * A largura e estimada por contagem de caracteres, nao medida: ler
  * TextFrame.width obrigaria a criar o texto, medir e reposicionar, e a
  * ancoragem de pointText muda de semantica no meio disso. O fator 0.55 em e
- * uma media larga para as sem-serifa usadas em legenda — erra para o lado de
+ * uma media larga para as sem-serifa usadas em legenda - erra para o lado de
  * encolher demais, que e o lado seguro.
  *
  * "PANTONE Neutral Black C  dE 2.5" tem 31 caracteres: a 9 pt pede ~153 pt de
@@ -976,7 +993,7 @@ function longestLineLength(text) {
  * Encolher a fonte por bloco resolve o transbordo mas entrega uma legenda
  * desigual: os blocos de 2 colunas ficam com 9 pt e os de 1 coluna com 6 pt,
  * lado a lado. Alargar a coluna mantem um corpo unico para tudo. A conta e
- * feita para UMA coluna, entao os blocos largos sobram espaco — e o lado certo
+ * feita para UMA coluna, entao os blocos largos sobram espaco - e o lado certo
  * de errar.
  */
 function autoUnitWidth(charCounts, baseSize, pad, minWidth, maxWidth) {
@@ -1005,7 +1022,7 @@ function fitTextSize(chars, maxWidth, baseSize, minSize) {
  * Calcula onde cada cartao vai, sem desenhar nada.
  *
  * Coordenadas com origem em (0,0) no canto superior esquerdo e y crescendo para
- * BAIXO — a conversao para o sistema do Illustrator, que cresce para cima,
+ * BAIXO - a conversao para o sistema do Illustrator, que cresce para cima,
  * acontece so na hora de desenhar. Isso mantem a funcao pura e testavel, e e
  * necessario tambem para saber o tamanho total antes de desenhar o painel de
  * fundo, que precisa ficar atras de tudo.
@@ -1118,7 +1135,7 @@ function groupRecords(records, cards) {
  *
  * A grade regular e o que faz a prancheta ler como sistema, entao a largura
  * configurada manda: um nome comprido encolhe o texto, nao deforma a coluna.
- * O cartao so alarga quando nem o corpo minimo caberia — ai a alternativa
+ * O cartao so alarga quando nem o corpo minimo caberia - ai a alternativa
  * seria texto ilegivel, que e pior.
  *
  * E a prioridade inversa da que valia antes, quando um unico nome longo
@@ -1238,7 +1255,7 @@ function drawBackdrop(canvas, left, top, w, h, rgb, radius) {
  *
  * A altura de linha e uma so, calculada pelo rotulo mais alto do conjunto. Ela
  * precisa ser uniforme porque a posicao de cada item e o indice da linha vezes
- * a altura — usar a altura do proprio item desalinharia tudo assim que dois
+ * a altura - usar a altura do proprio item desalinharia tudo assim que dois
  * rotulos tivessem numeros de linhas diferentes.
  */
 function drawGrid(canvas, records) {
@@ -1304,7 +1321,7 @@ function drawGrid(canvas, records) {
  * Bento: cartoes de cantos arredondados sobre um painel.
  *
  * Cada cartao traz o nome no canto superior esquerdo, o Pantone no superior
- * direito, e os valores no rodape em duas colunas — rotulo a esquerda, valor
+ * direito, e os valores no rodape em duas colunas - rotulo a esquerda, valor
  * alinhado a direita. O texto usa uma cor derivada da propria cor do cartao
  * (mesma matiz, luminosidade oposta), nao preto ou branco chapado.
  */
@@ -1418,7 +1435,9 @@ function main() {
     }
 
     if (mode === "input") {
-        var text = promptForColors();
+        // Lista embutida tem prioridade sobre a caixa: e assim que o arquivo
+        // gerado pela skill roda direto, sem ninguem digitar nada.
+        var text = hasEmbeddedColors() ? EMBEDDED_COLORS : promptForColors();
         if (text === null) return; // cancelado
         inputErrors = collectFromInput(text, raw);
         if (raw.length === 0) {
