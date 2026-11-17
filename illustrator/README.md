@@ -25,6 +25,21 @@ Dois layouts, via `CONFIG.layout`:
 
 Os grupos valem nos dois: cada um começa numa linha nova, com o título acima.
 
+As proporções do cartão saíram de medir uma prancheta de referência pixel a
+pixel, não de chute:
+
+| | Valor |
+| --- | --- |
+| proporção do cartão (largura/altura) | 1,89 |
+| padding interno | 5,6% da largura |
+| corpo do texto | 3,1% da largura |
+| **entrelinha do bloco de valores** | **2,4× o corpo** |
+| respiro entre cartões | 3% da largura |
+
+A entrelinha é o que mais muda o resultado. Em 1,3× as três linhas de valor
+grudam no rodapé e o cartão fica apertado; em 2,4× elas respiram e o bloco lê
+como tabela.
+
 Dois detalhes que fazem o cartão funcionar:
 
 - **A cor do texto é derivada da própria cor**, não preto ou branco chapado:
@@ -32,9 +47,10 @@ Dois detalhes que fazem o cartão funcionar:
   AA da WCAG (4.5:1). Dá magenta escuro sobre rosa, oliva sobre amarelo, rosa
   claro sobre vinho. Só cai para preto/branco quando nenhuma variação de
   luminosidade daquela matiz alcança o contraste.
-- **A largura da coluna se adapta ao conteúdo** (`autoWidth`), de modo que a
-  legenda inteira use um corpo de texto só. Sem isso os cartões estreitos
-  sairiam com texto bem menor que os largos.
+- **A grade manda; o texto cede.** Um nome comprido encolhe o corpo do texto em
+  vez de deformar a coluna — a grade regular é o que faz a prancheta ler como
+  sistema. O cartão só alarga (`autoWidth`, até `maxSwatchW`) quando nem o corpo
+  mínimo caberia, porque aí a alternativa seria texto ilegível.
 
 ## Como usar
 
@@ -104,23 +120,24 @@ Abra o `.jsx` num editor de texto: o bloco `CONFIG`, no topo, controla tudo.
 | `showName` / `showHex` / `showCMYK` / `showRGB` / `showPantone` | | liga e desliga cada linha do rótulo |
 | `uppercaseName` | `true` | nome do cartão em caixa alta |
 | `pantoneCount` | `1` | quantos Pantones listar; o 1º vai no cabeçalho, os demais viram linhas |
-| `showDeltaE` | `true` | mostra o ΔE ao lado do código Pantone |
-| `maxDeltaE` | `10` | acima disso o match é considerado fraco |
+| `showDeltaE` | `"auto"` | `"auto"` (só em match fraco), `true` ou `false` |
+| `deltaEThreshold` | `2.5` | acima disso o ΔE aparece no cartão |
 | `layout` | `"bento"` | `"bento"` ou `"grid"` |
 | `columns` | `3` | colunas da grade |
-| `swatchW` / `swatchH` | `240` / `150` | largura de 1 coluna e altura de linha, em pontos |
-| `autoWidth` | `true` | alarga a coluna até o cartão caber no corpo base |
-| `maxSwatchW` | `420` | teto para o alargamento automático |
+| `swatchW` / `swatchH` | `260` / `137` | cartão de 1 coluna, em pontos (proporção 1,89) |
+| `autoWidth` | `true` | alarga o cartão só quando nem o corpo mínimo cabe |
+| `maxSwatchW` | `420` | teto para esse alargamento |
 | `bentoMosaic` | `false` | cartões de tamanhos variados em vez de uniformes |
-| `cornerRadius` | `12` | arredondamento dos cartões |
-| `panelColor` / `panelPadding` / `panelRadius` | | painel atrás dos cartões; `null` desliga |
-| `backgroundColor` / `backgroundPadding` | | fundo atrás do painel; `null` desliga |
+| `cornerRadius` | `8` | arredondamento dos cartões |
+| `panelColor` / `panelPadding` / `panelRadius` | branco / `19` / `16` | painel atrás dos cartões; `null` desliga |
+| `backgroundColor` / `backgroundPadding` | cinza / `18` | fundo atrás do painel; `null` desliga |
 | `minInkContrast` | `4.5` | contraste mínimo entre texto e cor do cartão |
-| `gapX` / `gapY` | `16` | espaçamento entre cartões, em pontos |
-| `textSize` | `9` | corpo do texto |
+| `gapX` / `gapY` | `8` / `10` | espaçamento entre cartões, em pontos |
+| `textSize` | `8` | corpo do texto |
+| `bentoLineSpacing` / `gridLineSpacing` | `2.4` / `1.35` | entrelinha, como fator do corpo |
 | `minTextSize` | `6` | piso ao encolher texto que não coube |
 | `bentoTallFactor` | `1.5` | altura das linhas altas do bento |
-| `bentoPadding` | `16` | respiro entre a borda do cartão e o texto |
+| `bentoPadding` | `15` | respiro entre a borda do cartão e o texto |
 | `groupHeadingSize` | `13` | corpo do título de grupo |
 | `groupHeadingGap` / `groupGapY` | `10` / `30` | respiro do título aos cartões, e entre grupos |
 | `uppercaseGroup` | `true` | título de grupo em caixa alta |
@@ -139,10 +156,15 @@ consegue devolver o *nome* de uma spot color que já veio de uma biblioteca
 Pantone. Não existe função de conversão — qualquer script que prometa isso está
 consultando uma tabela, como este aqui.
 
-O número `dE` ao lado do código é a distância perceptual
+Por padrão (`showDeltaE: "auto"`) o cartão sai limpo — só `PANTONE 235 C` — e o
+ΔE aparece apenas quando o match é pior que `deltaEThreshold` (2,5). A maioria
+das cores acha um Pantone a menos de 2 de ΔE; carimbar `dE 0.5` em todas só
+roubaria espaço do cartão. Onde o ΔE aparece, ele está avisando de verdade.
+
+O número `dE` é a distância perceptual
 [CIEDE2000](https://en.wikipedia.org/wiki/Color_difference#CIEDE2000) entre a
 sua cor e aquele Pantone: abaixo de 1 é imperceptível, 2–3 é perceptível lado a
-lado, acima de 10 já é outra cor. É o que sinaliza que a linha é aproximação.
+lado, acima de 10 já é outra cor.
 
 Isso vale inclusive quando a cor já é uma spot color: o nome exato dela sai no
 título do cartão, mas o Pantone do cabeçalho continua sendo o resultado da busca
@@ -163,6 +185,27 @@ Três limites que valem entender:
 
 Nos testes com 11 cores de marca conhecidas, o Pantone declarado pela marca
 aparece **em 1º lugar em 9 casos** e sempre entre os 3 primeiros.
+
+### Comparado com outras ferramentas
+
+Vale desconfiar de código Pantone vindo de gerador. Comparando com uma
+prancheta feita por outra ferramenta, para as mesmas 9 cores, o ΔE do código
+que ela escolheu contra o do escolhido aqui:
+
+| Cor | Outra ferramenta | ΔE | Este script | ΔE |
+| --- | --- | --- | --- | --- |
+| `#FF3366` | 213 C | 8,3 | 191 C | **1,9** |
+| `#FF6600` | 166 C | 6,0 | 1585 C | **1,2** |
+| `#0099FF` | 2995 C | 10,0 | 279 C | **4,7** |
+| `#F8F852` | 3935 C | 5,9 | 387 C | **3,8** |
+| `#00CC61` | 7481 C | 6,4 | 7479 C | **4,7** |
+| `#851057` | 235 C | 1,4 | 235 C | 1,4 |
+
+Testei se ela usava distância euclidiana em RGB (o método ingênuo): não
+reproduz as escolhas dela. É outra tabela Pantone, com renderizações sRGB
+diferentes. Não dá para dizer qual tabela está certa sem um leque físico — mas
+dá para dizer que, medindo contra a mesma referência, as escolhas daqui estão
+mais perto.
 
 ## Origem dos dados
 

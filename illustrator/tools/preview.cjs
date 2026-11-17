@@ -24,24 +24,17 @@ if (layout === "grid") source = source.replace('layout: "bento"', 'layout: "grid
  * RGB e HEX misturados. Cores claras, escuras e saturadas para exercitar a
  * escolha de contraste da tinta.
  */
-var PASTED = [
-  "Principais",
-  "Vermelho da marca: 228, 0, 43",
-  "Azul institucional: #0033A0",
-  "Amarelo destaque: 255, 184, 28",
-  "Verde apoio: #00B140",
-  "Roxo: 95, 37, 159",
-  "Ciano: #009CDE",
-  "",
-  "Secundarias",
-  "Grafite: 83, 86, 90",
-  "Areia: #D6C7A6",
-  "Preto marca: 45, 41, 38",
-  "Off-white: #F4F2ED",
-  "Laranja: 255, 105, 0",
-  "Rosa: #D62598",
-  "Petroleo: 0, 84, 92"
-].join("\n");
+var PASTED = (process.env.PREVIEW_LIST || [
+  "Rosa: 255, 153, 255",
+  "Amarelo: #F8F852",
+  "Copas: #851057",
+  "Bege: 255, 217, 218",
+  "Ouro: #FFDD17",
+  "Cereja: #FF3366",
+  "Laranja: #FF6600",
+  "Anil: #0099FF",
+  "Verde: #00CC61"
+].join("\n"));
 
 // --- DOM simulado -----------------------------------------------------------
 

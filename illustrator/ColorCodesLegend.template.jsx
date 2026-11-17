@@ -41,10 +41,18 @@ var CONFIG = {
     // para producao — so deixa o cartao mais cheio. Ver illustrator/README.md.
     pantoneCount: 1,
 
-    // Mostra a distancia perceptual junto do codigo: "PANTONE 286 C  dE 1.3".
-    // E o que resta avisando que o Pantone e aproximacao, e nao leitura.
-    // Desligue so se a legenda for para consumo interno.
-    showDeltaE: true,
+    // Mostra a distancia perceptual junto do codigo: "PANTONE 454 C  dE 2.6".
+    //   "auto"  so quando o match for pior que deltaEThreshold (padrao)
+    //   true    sempre
+    //   false   nunca
+    // "auto" deixa o cartao limpo no caso comum e avisa exatamente onde
+    // importa: a maioria das cores acha um Pantone a menos de 2 de dE, e
+    // carimbar "dE 0.5" em todas so rouba espaco do cartao.
+    showDeltaE: "auto",
+
+    // Acima disto o match e fraco o bastante para o dE aparecer no cartao.
+    // 1 = imperceptivel, 2-3 = perceptivel lado a lado, >10 = outra cor.
+    deltaEThreshold: 2.5,
 
     // "bento" = cartoes de cantos arredondados sobre um painel, com nome e
     //           Pantone no topo e os valores em duas colunas embaixo
@@ -52,13 +60,35 @@ var CONFIG = {
     layout: "bento",
 
     columns: 3,
-    swatchW: 240, // no bento, largura de 1 coluna; blocos largos ocupam 2
-    swatchH: 150, // no bento, altura de uma linha normal
 
-    // Alarga a coluna ate o cartao mais largo caber no corpo base, em vez de
-    // encolher a fonte. Sem isso os blocos estreitos saem com texto bem menor
-    // que os largos e a legenda fica visualmente desigual. Nunca encolhe abaixo
-    // de swatchW; para de crescer em maxSwatchW e ai sim reduz o corpo.
+    /*
+     * Proporcoes do cartao.
+     *
+     * Os numeros abaixo vem de medir uma prancheta de referencia pixel a
+     * pixel: cartao de 269x142, padding 15, corpo ~8.3, entrelinha 20,
+     * respiro 8 entre cartoes.
+     * Normalizado pela largura do cartao:
+     *
+     *   altura        = largura / 1.89
+     *   padding       = 5.6% da largura
+     *   corpo         = 3.1% da largura
+     *   entrelinha    = 2.4x o corpo   <- o que da o ar de tabela
+     *   respiro       = 3% da largura
+     *
+     * A entrelinha e o que mais muda o resultado: em 1.3x as tres linhas de
+     * valor grudam no rodape e o cartao fica apertado; em 2.2x elas respiram.
+     */
+    swatchW: 260, // no bento, largura de 1 coluna; blocos largos ocupam 2
+    swatchH: 137, // 260 / 1.89
+
+    /*
+     * Quando o conteudo nao cabe na largura do cartao, o que cede primeiro.
+     *
+     * O padrao e encolher o texto: a grade regular e o que faz a prancheta ler
+     * como sistema, e um nome comprido nao deveria deformar a coluna inteira.
+     * So quando o corpo chegaria abaixo de minTextSize o cartao alarga, ate
+     * maxSwatchW. (Antes era o contrario, e um unico nome longo inflava tudo.)
+     */
     autoWidth: true,
     maxSwatchW: 420,
 
@@ -67,31 +97,36 @@ var CONFIG = {
     // guia de marca.
     bentoMosaic: false,
 
-    cornerRadius: 12,
+    cornerRadius: 8,
 
     // Painel claro atras dos cartoes e fundo atras dele. null desliga cada um.
     // Valores em RGB 0-255; num documento CMYK sao convertidos.
     panelColor: [255, 255, 255],
-    panelPadding: 26,
-    panelRadius: 20,
-    backgroundColor: [232, 232, 232],
-    backgroundPadding: 22,
+    panelPadding: 19,
+    panelRadius: 16,
+    backgroundColor: [223, 223, 223],
+    backgroundPadding: 18,
 
     // Contraste minimo (WCAG) entre o texto e a cor do cartao. 4.5 e o criterio
     // AA para texto normal.
     minInkContrast: 4.5,
-    gapX: 16,
-    gapY: 16, // no bento vale para os dois eixos
-    textSize: 9,
-    // Corpo minimo. Rotulo que nao cabe na largura do bloco encolhe ate aqui;
-    // abaixo disso preferimos deixar transbordar a entregar algo ilegivel.
+    gapX: 8,
+    gapY: 10, // no bento vale para os dois eixos
+    textSize: 8,
+    // Corpo minimo. Rotulo que nao cabe na largura do cartao encolhe ate aqui;
+    // so entao o cartao alarga (ver autoWidth).
     minTextSize: 6,
     fontName: "", // "" = fonte padrao do documento. Ex.: "Helvetica"
+
+    // Entrelinha, como fator do corpo. No bento as linhas de valor sao uma
+    // tabela e pedem ar; no grid sao um paragrafo e pedem o contrario.
+    bentoLineSpacing: 2.4,
+    gridLineSpacing: 1.35,
 
     // Só no bento: altura das linhas altas do mosaico, como fator de swatchH.
     bentoTallFactor: 1.5,
     // Só no bento: respiro entre a borda do cartao e o texto, em pontos.
-    bentoPadding: 16,
+    bentoPadding: 15,
 
     // Titulos de grupo ("Principais", "Secundarias").
     groupHeadingSize: 13,
@@ -460,8 +495,16 @@ function buildCard(rec, cfg) {
     var badge = "";
     var rows = [];
 
+    /*
+     * O dE so entra quando acrescenta informacao. Com showDeltaE "auto" ele
+     * aparece apenas nos matches fracos: o cartao fica limpo como num guia de
+     * marca, e o aviso sobra para as cores em que a aproximacao de fato
+     * merece conferencia num leque fisico.
+     */
     function pantoneText(hit) {
-        return cfg.showDeltaE
+        var show = cfg.showDeltaE === true ||
+            (cfg.showDeltaE === "auto" && hit.deltaE > cfg.deltaEThreshold);
+        return show
             ? hit.name + "  dE " + (Math.round(hit.deltaE * 10) / 10)
             : hit.name;
     }
@@ -1006,7 +1049,7 @@ function planBento(sections, unitW, cfg) {
                 var entry = section.cards[index + s];
                 var size = fitTextSize(cardTextChars(entry.card), w - pad * 2,
                                        cfg.textSize, cfg.minTextSize);
-                var lead = size * 1.3;
+                var lead = size * cfg.bentoLineSpacing;
 
                 // cabecalho + linhas de valor, tudo entre os paddings
                 var headerH = (entry.card.title || entry.card.badge) ? lead : 0;
@@ -1019,7 +1062,10 @@ function planBento(sections, unitW, cfg) {
             }
             if (!rowTiles.length) break;
 
-            var nominal = cfg.swatchH *
+            // Se a coluna teve de alargar, a altura acompanha para o cartao
+            // manter a proporcao; senao ele viraria uma faixa achatada.
+            var baseH = cfg.swatchH * (unitW / cfg.swatchW);
+            var nominal = baseH *
                 ((cfg.bentoMosaic && bentoRowIsTall(rowIndex)) ? cfg.bentoTallFactor : 1);
             var rowH = nominal > needed ? nominal : needed;
 
@@ -1065,6 +1111,36 @@ function groupRecords(records, cards) {
         byName[key].cards.push({ index: i, card: cards[i] });
     }
     return sections;
+}
+
+/*
+ * Largura de coluna do bento.
+ *
+ * A grade regular e o que faz a prancheta ler como sistema, entao a largura
+ * configurada manda: um nome comprido encolhe o texto, nao deforma a coluna.
+ * O cartao so alarga quando nem o corpo minimo caberia — ai a alternativa
+ * seria texto ilegivel, que e pior.
+ *
+ * E a prioridade inversa da que valia antes, quando um unico nome longo
+ * inflava a legenda inteira.
+ */
+function bentoUnitWidth(charCounts, cfg) {
+    if (!cfg.autoWidth) return cfg.swatchW;
+
+    var longest = 0;
+    for (var i = 0; i < charCounts.length; i++) {
+        if (charCounts[i] > longest) longest = charCounts[i];
+    }
+    if (longest === 0) return cfg.swatchW;
+
+    // Cabe no cartao configurado, mesmo que com texto menor? Entao fica.
+    var atConfigured = fitTextSize(longest, cfg.swatchW - cfg.bentoPadding * 2,
+                                   cfg.textSize, 0);
+    if (atConfigured >= cfg.minTextSize) return cfg.swatchW;
+
+    // Nao cabe nem no corpo minimo: alarga ate caber, dentro do teto.
+    return autoUnitWidth([longest], cfg.minTextSize, cfg.bentoPadding,
+                         cfg.swatchW, cfg.maxSwatchW);
 }
 
 /* Contexto de desenho compartilhado pelos dois layouts. */
@@ -1131,12 +1207,12 @@ function drawTile(canvas, rec, x, y, w, h) {
  * texto NO ponto, entao passar a borda direita do cartao ja alinha a coluna de
  * valores sem precisar medir string nenhuma.
  */
-function drawText(canvas, card, label, x, baselineY, color, size, align) {
+function drawText(canvas, card, label, x, baselineY, color, size, align, spacing) {
     var text = card.textFrames.pointText([x, baselineY]);
     text.contents = label;
     try {
         text.textRange.characterAttributes.size = size;
-        text.textRange.characterAttributes.leading = size * 1.3;
+        text.textRange.characterAttributes.leading = size * (spacing || 1.3);
         text.textRange.characterAttributes.fillColor = color;
         if (canvas.font) text.textRange.characterAttributes.textFont = canvas.font;
     } catch (e) {}
@@ -1185,7 +1261,7 @@ function drawGrid(canvas, records) {
     var tallest = 0;
     for (var n = 0; n < records.length; n++) {
         sizes[n] = fitTextSize(chars[n], textWidth, CONFIG.textSize, CONFIG.minTextSize);
-        var h = countLines(labels[n]) * sizes[n] * 1.3;
+        var h = countLines(labels[n]) * sizes[n] * CONFIG.gridLineSpacing;
         if (h > tallest) tallest = h;
     }
     var rowH = CONFIG.swatchH + tallest + CONFIG.gapY;
@@ -1218,7 +1294,7 @@ function drawGrid(canvas, records) {
             var card = drawTile(canvas, records[idx], x, cardY, unitW, CONFIG.swatchH);
             drawText(canvas, card, labels[idx], x,
                      cardY - CONFIG.swatchH - sizes[idx] - 4,
-                     canvas.black, sizes[idx], "left");
+                     canvas.black, sizes[idx], "left", CONFIG.gridLineSpacing);
         }
         y -= Math.ceil(sections[g].cards.length / CONFIG.columns) * rowH;
     }
@@ -1243,9 +1319,7 @@ function drawBento(canvas, records) {
         chars[m] = cardTextChars(cards[m]);
     }
 
-    var unitW = CONFIG.autoWidth
-        ? autoUnitWidth(chars, CONFIG.textSize, pad, CONFIG.swatchW, CONFIG.maxSwatchW)
-        : CONFIG.swatchW;
+    var unitW = bentoUnitWidth(chars, CONFIG);
 
     var plan = planBento(groupRecords(records, cards), unitW, CONFIG);
 
@@ -1286,7 +1360,7 @@ function drawBento(canvas, records) {
         var inkRgb = deriveInkColor(rec.rgb, CONFIG.minInkContrast);
         var ink = makeFlatColor(canvas.doc, inkRgb, rgbToCmykNaive(inkRgb));
 
-        var lead = tile.size * 1.3;
+        var lead = tile.size * CONFIG.bentoLineSpacing;
         var leftX = x + pad;
         var rightX = x + tile.w - pad;
 
@@ -1310,8 +1384,10 @@ function drawBento(canvas, records) {
                 labels.push(card.rows[r].label);
                 values.push(card.rows[r].value);
             }
-            drawText(canvas, group, labels.join("\r"), leftX, bodyBaseline, ink, tile.size, "left");
-            drawText(canvas, group, values.join("\r"), rightX, bodyBaseline, ink, tile.size, "right");
+            drawText(canvas, group, labels.join("\r"), leftX, bodyBaseline,
+                     ink, tile.size, "left", CONFIG.bentoLineSpacing);
+            drawText(canvas, group, values.join("\r"), rightX, bodyBaseline,
+                     ink, tile.size, "right", CONFIG.bentoLineSpacing);
         }
     }
 }

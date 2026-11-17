@@ -24,6 +24,10 @@ function sandboxPick(rgbTriplet) {
     return probeBox.pickTextColor(rgbTriplet);
 }
 
+// Lidos do proprio CONFIG: o teste confere a coerencia do desenho, nao
+// decora os numeros do layout.
+var GAP_X = Number(/\n\s*gapX:\s*([\d.]+)/.exec(source)[1]);
+
 var failures = 0;
 var checks = 0;
 
@@ -348,8 +352,11 @@ ok("spot color usou o nome real como titulo", spotTile !== null, labels.join(" |
 if (spotTile) {
     var byRole = spotTile.texts;
     ok("spot: titulo alinhado a esquerda", byRole[0].align === "left");
+    // Com showDeltaE "auto" o dE so aparece nos matches fracos, entao as duas
+    // formas sao validas aqui.
     ok("spot: badge e o Pantone mais proximo, alinhado a direita",
-        byRole[1].align === "right" && /^PANTONE .+  dE [\d.]+$/.test(byRole[1].contents),
+        byRole[1].align === "right" &&
+        /^PANTONE [^ ].*?(  dE [\d.]+)?$/.test(byRole[1].contents),
         byRole[1].contents);
     ok("spot: coluna de rotulos", byRole[2].contents === "HEX\rRGB\rCMYK", byRole[2].contents);
 
@@ -493,7 +500,7 @@ for (var rk = 0; rk < rowKeys.length; rk++) {
         if (q2 > 0) {
             var gapActual = rowTiles[q2].left - rowTiles[q2 - 1].right;
             if (gapActual < -1e-6) overlap = true;
-            else if (Math.abs(gapActual - 16) > 1e-6) gapWrong = true;
+            else if (Math.abs(gapActual - GAP_X) > 1e-6) gapWrong = true;
         }
     }
 }
@@ -601,8 +608,8 @@ for (var mt = 0; mt < mTiles.length; mt++) {
 ok("mosaico tem cartoes largos e estreitos", maxW > minW,
     "larguras de " + minW.toFixed(0) + " a " + maxW.toFixed(0));
 ok("cartao largo e o dobro do estreito mais o respiro",
-    Math.abs(maxW - (minW * 2 + 16)) < 1e-6,
-    maxW.toFixed(1) + " vs " + (minW * 2 + 16).toFixed(1));
+    Math.abs(maxW - (minW * 2 + GAP_X)) < 1e-6,
+    maxW.toFixed(1) + " vs " + (minW * 2 + GAP_X).toFixed(1));
 ok("mosaico tem linhas altas e normais", maxH > minH,
     "alturas de " + minH.toFixed(0) + " a " + maxH.toFixed(0));
 

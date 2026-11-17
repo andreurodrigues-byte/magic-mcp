@@ -607,6 +607,77 @@ ok("cor sem nome fica sem nome",
     sandbox.parseColorInput("#FF0000").groups[0].colors[0].name === "");
 
 // ---------------------------------------------------------------------------
+console.log("\nshowDeltaE auto - dE so onde acrescenta informacao");
+// ---------------------------------------------------------------------------
+var autoCfg = {
+    showName: false, showHex: true, showPantone: true,
+    showDeltaE: "auto", deltaEThreshold: 2.5
+};
+
+var good = makeRec();
+good.pantone = [{ name: "PANTONE 185 C", hex: "#EF0027", deltaE: 1.2 }];
+ok("match bom sai limpo, sem dE",
+    sandbox.buildCard(good, autoCfg).badge === "PANTONE 185 C",
+    sandbox.buildCard(good, autoCfg).badge);
+
+var poor = makeRec();
+poor.pantone = [{ name: "PANTONE 185 C", hex: "#EF0027", deltaE: 5.6 }];
+ok("match fraco mostra o dE",
+    sandbox.buildCard(poor, autoCfg).badge === "PANTONE 185 C  dE 5.6",
+    sandbox.buildCard(poor, autoCfg).badge);
+
+var edge = makeRec();
+edge.pantone = [{ name: "PANTONE 185 C", hex: "#EF0027", deltaE: 2.5 }];
+ok("exatamente no limite ainda conta como bom",
+    sandbox.buildCard(edge, autoCfg).badge === "PANTONE 185 C",
+    sandbox.buildCard(edge, autoCfg).badge);
+
+ok("showDeltaE true mostra sempre",
+    sandbox.buildCard(good, { showPantone: true, showDeltaE: true, deltaEThreshold: 2.5 })
+        .badge === "PANTONE 185 C  dE 1.2");
+ok("showDeltaE false esconde sempre",
+    sandbox.buildCard(poor, { showPantone: true, showDeltaE: false, deltaEThreshold: 2.5 })
+        .badge === "PANTONE 185 C");
+
+// ---------------------------------------------------------------------------
+console.log("\nbentoUnitWidth - a grade manda, o texto cede");
+// ---------------------------------------------------------------------------
+/*
+ * A prioridade e o inverso da que valia antes: a largura configurada e fixa e
+ * o texto encolhe para caber. O cartao so alarga quando nem o corpo minimo
+ * caberia, porque ai a alternativa seria texto ilegivel.
+ */
+var layoutCfg = {
+    autoWidth: true, swatchW: 260, maxSwatchW: 420,
+    bentoPadding: 15, textSize: 9, minTextSize: 6
+};
+ok("conteudo curto mantem a largura configurada",
+    sandbox.bentoUnitWidth([20], layoutCfg) === 260,
+    "" + sandbox.bentoUnitWidth([20], layoutCfg));
+ok("conteudo longo NAO alarga o cartao, so encolhe o texto",
+    sandbox.bentoUnitWidth([55], layoutCfg) === 260,
+    "" + sandbox.bentoUnitWidth([55], layoutCfg));
+
+// 90 caracteres a 6 pt pedem 90*6*0.55 = 297 pt, mais 30 de padding = 327.
+var huge = sandbox.bentoUnitWidth([90], layoutCfg);
+ok("so alarga quando nem o corpo minimo cabe", huge > 260, "" + huge);
+ok("e nao passa do teto", sandbox.bentoUnitWidth([400], layoutCfg) === 420,
+    "" + sandbox.bentoUnitWidth([400], layoutCfg));
+ok("autoWidth desligado nunca alarga",
+    sandbox.bentoUnitWidth([400], {
+        autoWidth: false, swatchW: 260, maxSwatchW: 420,
+        bentoPadding: 15, textSize: 9, minTextSize: 6
+    }) === 260);
+ok("lista vazia devolve a largura configurada",
+    sandbox.bentoUnitWidth([], layoutCfg) === 260);
+
+// No ponto em que decide alargar, o texto ainda tem de caber no corpo minimo.
+var atLimit = sandbox.fitTextSize(90, huge - 30, 9, 6);
+ok("depois de alargar, o texto cabe no corpo minimo",
+    90 * atLimit * 0.55 <= huge - 30 + 0.5 || huge === 420,
+    "corpo " + atLimit + " em " + huge);
+
+// ---------------------------------------------------------------------------
 console.log("\ncardTextChars - largura em colunas opostas");
 // ---------------------------------------------------------------------------
 /*
